@@ -8,15 +8,14 @@ Created on Sat Feb  9 08:41:10 2019
 import os
 import subprocess
 import sympy as sp
-# from utils import Nterms
 from sympy.printing.ccode import C99CodePrinter
 from sympy.printing.fcode import FCodePrinter
 from sympy.printing.cxxcode import CXX17CodePrinter
 from sympy.printing.llvmjitcode import LLVMJitPrinter
-from utils import Nterms
+from .utils import Nterms
 import textwrap
-from cse import cse
-from generator import generate_mappings, generate_M_operators, \
+from .cse import cse
+from .generator import generate_mappings, generate_M_operators, \
                   generate_M_shift_operators, generate_L_operators, \
                   generate_L_shift_operators, \
                   generate_L2P_operators

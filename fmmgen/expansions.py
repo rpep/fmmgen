@@ -1,9 +1,9 @@
 import sympy as sp
 from sympy.polys.orderings import monomial_key
 from sympy import factorial
-from utils import itermonomials
+from .utils import itermonomials, q, Nterms
 import functools
-from utils import q, Nterms
+
 
 
 def M(n, symbols):

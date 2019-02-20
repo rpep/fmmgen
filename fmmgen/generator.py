@@ -1,6 +1,6 @@
-from utils import itermonomials
+from .utils import itermonomials
+from .expansions import M, M_shift, L, L_shift, phi_deriv
 from sympy.polys.orderings import monomial_key
-from expansions import M, M_shift, L, L_shift, phi_deriv
 
 def generate_mappings(order, symbols):
     x, y, z = symbols
