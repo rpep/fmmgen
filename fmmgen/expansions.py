@@ -25,6 +25,22 @@ def M(n, symbols):
 
 
 def M_shift(n, order, symbols, index_dict):
+    """
+    M_shift(n, order, symbols, index_dict)
+
+    Returns symbolic expression for the n = (nx, ny, nz) multipole shifting
+    operator.
+
+    i.e if we want the translated x-component of the dipole moment
+
+    >>> from fmmgen.generator import generate_mappings
+    >>> from fmmgen.expansions import M_shift
+    >>> order = 2
+    >>> x, y, z = sp.symbols('x y z')
+    >>> idict, rdict = generate_mappings(order, [x, y, z])
+    >>> M_shift((1, 0, 0), order, (x, y, z), idict)
+    x*M[0, 0] + M[1, 0]
+    """
     x, y, z = symbols
     modn = sum(n)
 
@@ -45,6 +61,26 @@ def M_shift(n, order, symbols, index_dict):
 
 @functools.lru_cache(maxsize=None)
 def Phi_derivatives(n, symbols):
+    """
+    Phi_derivatives(n, symbols)
+
+    Returns symbolic expression for the nth derivative of 1/R
+
+    Inputs:
+    n, int:
+        Tuple of derivatives
+    symbols, tuple:
+        Tuple of sympy symbols. Note that it *must* be a tuple for the
+        functools.lru_cache to hash the input.
+
+    Example:
+
+    >>> import sympy as sp
+    >>> from fmmgen.expansions import Phi_derivatives
+    >>> x, y, z = sp.symbols('x y z')
+    >>> Phi_derivatives((1, 0, 0), (x, y, z))
+    -1.0*x/R**3
+    """
     dx, dy, dz = symbols
     R = (dx**2 + dy**2 + dz**2)**(0.5)
     phi = 1/R
