@@ -40,6 +40,6 @@ fmmgen.generate_code(order, module_name, generate_cython_wrapper=True, CSE=True)
 
 import pyximport
 pyximport.install()
-import operatorswrap
+import operators_wrap
 
 ```
