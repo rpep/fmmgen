@@ -187,6 +187,9 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
                                [sp.MatrixSymbol('L', Nterms(i), 1)],
                                operator="+=")
 
+        header += head
+        body += code + '\n'
+
         Fs = sp.Matrix(generate_L2P_operators(i, symbols, idict))
         head, code = p.generate(f'L2P_{i}', 'F', Fs,
                                list(symbols) + \
@@ -196,40 +199,74 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
+
+    # We now generate wrapper functions that cover all orders generated.
+    unique_funcs = []
+    func_definitions = header.split(';\n')
+    for func in func_definitions:
+        if '_0' in func:
+            unique_funcs.append(func)
+
+    wrapper_funcs = [f.replace(')', ', int order)').replace('_0', '')
+                     for f in unique_funcs]
+
+    func_definitions += wrapper_funcs
+    print('\n'.join(func_definitions))
+
+    for wfunc, func in zip(wrapper_funcs, unique_funcs):
+        # Add to header file
+        header += wfunc + ';\n'
+        # Create a switch statement that covers all functions:
+        code = wfunc + " {\n"
+        code += 'switch (order) {\n'
+        for i in range(order):
+            code += '  case {}:\n'.format(i)
+            replaced_code = func.replace('_0', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
+            code += '    ' + replaced_code + ';\n    break;\n'
+        code += "  }\n}\n"
+        print(code)
+        body += code
+
     f = open(f"{name}.h", 'w')
-    f.write("#ifndef FUNCTIONS_H\n#define FUNCTIONS_H\n")
+    f.write(f"#ifndef {name.upper()}_H\n#define {name.upper()}_H\n")
     f.write(header)
     f.write("#endif")
     f.close()
 
     f = open(f"{name}.c", 'w')
-    f.write("#include \"functions.h\"\n#include \"math.h\"\n")
+    f.write(f"#include \"{name}.h\"\n#include \"math.h\"\n")
     f.write(body)
     f.close()
 
     if generate_cython_wrapper:
         logger.info(f"Generating Cython wrapper: {name}_wrap.pyx")
-        func_definitions = header.split(';\n')
-
         library = f"{name}"
-        f = open(f"{name}wrap.pyx", "w")
 
+        f = open(f"{name}_decl.pxd", "w")
+        pxdcode = textwrap.dedent("""\
+        cdef extern from "{}.h":
+            {}
+        """)
+        f.write(pxdcode.format(name, '\n    '.join(func_definitions)))
+        f.close()
+
+        f = open(f"{name}_wrap.pyx", "w")
+        # expose the C functions from the header file.
         pyxcode = textwrap.dedent("""\
         # cython: language_level=3
         cimport numpy as np
-
-        cdef extern from "{}.h":
-            {}
-
-        """).format(name, '\n    '.join(func_definitions))
+        cimport {}
+        """).format(name + '_decl')
 
         subsdict = {" *": "[:]",
                     "void": "cpdef",
                     "_": ""}
 
+        # Generate the actual wrapper code
         for funcname in func_definitions:
+            print(funcname)
             if not funcname:
-                break
+                continue
             pyfuncname = funcname
             for key, value in subsdict.items():
                 pyfuncname = pyfuncname.replace(key, value)
@@ -245,7 +282,7 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
                 processed_args.append(arg.split(" ")[-1])
 
             pyxcode += '    ' + \
-                       function_name + \
+                       name + '_decl.' + function_name + \
                        "(" + ', '.join(processed_args) + ')\n\n'
 
         f.write(pyxcode)
