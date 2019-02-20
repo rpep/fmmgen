@@ -104,8 +104,36 @@ class FunctionPrinter:
         return header, code
 
 
-def generate_code(order, name, generate_cython_wrapper=False, debug=True):
-    p = FunctionPrinter(precision='float', debug=debug)
+def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False):
+    """
+    Inputs:
+
+    order, int:
+        Expansion order of the FMM operators.
+
+    name, str:
+        Name of generated files.
+
+        Note: Cython compiles *.pyx files to the *.c files with the same name,
+        which means that we have to use a different name for the cython file.
+        We therefore append "wrap" to the end of the name for the cython file,
+        and this is therefore the name of the Python module which must be
+        imported if using pyximport.
+
+    generate_cython_wrapper, bool:
+        Enable generation of a Cython wrapper for the C files.
+
+    CSE, bool:
+        Enable common subexpression elimination, to reduce the op count in
+        the generated code.
+    """
+
+    assert precision in ['double', 'float'], "Precision must be float or double"
+
+    if CSE:
+        p = FunctionPrinter(precision=precision, debug=False)
+    else:
+        p = FunctionPrinter(precision=precision, debug=True)
 
     header = ""
     body = ""
