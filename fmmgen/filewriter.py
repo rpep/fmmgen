@@ -55,7 +55,3 @@ class FileWriter:
 
         print(header)
         print(code)
-
-
-a = FileWriter(2)
-a.generate_code()
