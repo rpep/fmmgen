@@ -1,7 +1,8 @@
 import sympy as sp
 from sympy.polys.orderings import monomial_key
 from sympy import factorial
-from .utils import itermonomials, q, Nterms
+from sympy import itermonomials
+from .utils import q, Nterms
 import functools
 
 

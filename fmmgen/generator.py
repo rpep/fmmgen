@@ -1,11 +1,13 @@
-from .utils import itermonomials
+from sympy import itermonomials
 from .expansions import M, M_shift, L, L_shift, phi_deriv
 from sympy.polys.orderings import monomial_key
 
-def generate_mappings(order, symbols):
+def generate_mappings(order, symbols, key='grevlex'):
     x, y, z = symbols
-    grevlexkey = monomial_key('grlex', [z, y, x])
-    monoms = sorted(itermonomials([x, y, z], order), key=grevlexkey)
+    monoms = itermonomials([x, y, z], order)
+    if key:
+        monom_key = monomial_key(key, [z, y, x])
+        monoms = sorted(monoms, key=monom_key)
 
     index_dict = {}
     rindex_dict = {}
