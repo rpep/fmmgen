@@ -21,7 +21,20 @@ The code writer can also output a Cython wrapper for this C code, which can be
 used for quick testing of the operators.
 
 
-To try out the module:
+## Installation
+
+To try out the module, first install it and the requirements:
+
+```bash
+git clone https://github.com/rpep/fmmgen.git
+cd fmmgen
+pip install -r requirements.txt
+pip install .
+```
+
+## Example
+
+Then you can get started in using it to generate a C code version of the operators:
 
 ```python
 import fmmgen
@@ -35,10 +48,11 @@ fmmgen.generate_code(order, module_name, generate_cython_wrapper=True, CSE=False
 # Alternatively, for the optimised version:
 fmmgen.generate_code(order, module_name, generate_cython_wrapper=True, CSE=True)
 
-# When Cython generation is enabled, it is possible to use the operator functions:
+# When Cython generation is enabled, it is possible to use the operator functions
+# by importing them with pyximport:
 import pyximport
 pyximport.install()
-import operators_wrap
+import operators_wrap as fmm
 ```
 
 Alternatively, after generating the code as above, the C code can be compiled and used directly (following instructions should work on Linux/MacOS):
@@ -95,8 +109,20 @@ gcc operators.o main.o -o main
 ```
 
 
-# References
+## Tests
+
+To run the tests, simply run from the project root directory:
+
+```
+make runtests
+```
+
+## References
+
+The code was developed with reference to the following academic papers.
 
 [1] Visscher, P. B., & Apalkov, D. M. (2010). Simple recursive implementation of fast multipole method. Journal of Magnetism and Magnetic Materials, 322(2), 275–281. https://doi.org/10.1016/j.jmmm.2009.09.033
 
 [2] Coles, J. P., & Masella, M. (2015). The fast multipole method and point dipole moment polarizable force fields. The Journal of Chemical Physics, 142(2), 24109. https://doi.org/10.1063/1.4904922
+
+I would also like to thank J. P. Coles for useful discussions regarding the method and implementation.
