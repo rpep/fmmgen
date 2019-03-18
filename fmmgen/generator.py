@@ -1,3 +1,4 @@
+import sympy as sp
 from sympy import itermonomials
 from .expansions import M, M_shift, L, L_shift, phi_deriv
 from sympy.polys.orderings import monomial_key
@@ -198,11 +199,30 @@ def generate_L_shift_operators(order, symbols, index_dict):
     return L_shift_operators
 
 
+def generate_M2P_operators(order, symbols, index_dict):
+    """
+    generate_M2L_operators(order, symbols, index_dict)
+
+    Generates potential and field calculation operators for the
+    Barnes-Hut method up to order.
+    """
+    x, y, z = symbols
+    R = (x**2 + y**2 + z**2)**0.5
+
+    V = L((0, 0, 0), order, symbols, index_dict).subs('R', R)
+    Fx = -sp.diff(V, x)
+    Fy = -sp.diff(V, y)
+    Fz = -sp.diff(V, z)
+    return [V.subs(R, 'R'), Fx.subs(R, 'R'), Fy.subs(R, 'R'), Fz.subs(R, 'R')]
+
+
+
 def generate_L2P_operators(order, symbols, index_dict):
     """
     generate_L2P_operators(order, symbols, index_dict):
 
-    Generates potential and field calculation operators up to order.
+    Generates potential and field calculation operators for the Fast
+    Multipole Method up to order.
 
     Input:
     order, int:
@@ -227,8 +247,15 @@ def generate_L2P_operators(order, symbols, index_dict):
     >>> generate_L2P_operators(order, (x, y, z), map)
     [x*L[1, 0] + y*L[2, 0] + z*L[3, 0] + L[0, 0], -L[1, 0], -L[2, 0], -L[3, 0]]
     """
-    phi = phi_deriv(order, symbols, index_dict, deriv=(0, 0, 0))
+    x, y, z = symbols
+    R = (x**2 + y**2 + z**2)**0.5
+
+    V = phi_deriv(order, symbols, index_dict, deriv=(0, 0, 0))
+    # Fx = -sp.diff(V, x)
+    # Fy = -sp.diff(V, y)
+    # Fz = -sp.diff(V, z)
     Fx = -phi_deriv(order, symbols, index_dict, deriv=(1, 0, 0))
     Fy = -phi_deriv(order, symbols, index_dict, deriv=(0, 1, 0))
     Fz = -phi_deriv(order, symbols, index_dict, deriv=(0, 0, 1))
-    return [phi, Fx, Fy, Fz]
+
+    return [V, Fx, Fy, Fz]

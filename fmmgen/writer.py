@@ -19,7 +19,8 @@ from .cse import cse
 from .generator import generate_mappings, generate_M_operators, \
                   generate_M_shift_operators, generate_L_operators, \
                   generate_L_shift_operators, \
-                  generate_L2P_operators
+                  generate_L2P_operators, \
+                  generate_M2P_operators
 
 
 logger = logging.getLogger(name="fmmgen")
@@ -116,7 +117,7 @@ class FunctionPrinter:
         return header, code
 
 
-def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False):
+def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, include_dir=None, src_dir=None):
     """
     Inputs:
 
@@ -199,6 +200,14 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
+        Fs = sp.Matrix(generate_M2P_operators(i, symbols, idict))
+        head, code = p.generate(f'M2P_{i}', 'F', Fs,
+                                list(symbols) + \
+                                [sp.MatrixSymbol('M', Nterms(i), 1)],
+                                operator="+=")
+        header += head
+        body += code + '\n'
+
 
     # We now generate wrapper functions that cover all orders generated.
     unique_funcs = []
@@ -227,13 +236,19 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         print(code)
         body += code
 
-    f = open(f"{name}.h", 'w')
+    if not include_dir:
+        f = open(f"{name}.h", 'w')
+    else:
+        f = open(f"{include_dir.rstrip('/')}/{name}.h", 'w')
     f.write(f"#ifndef {name.upper()}_H\n#define {name.upper()}_H\n")
     f.write(header)
     f.write("#endif")
     f.close()
 
-    f = open(f"{name}.c", 'w')
+    if not src_dir:
+        f = open(f"{name}.c", 'w')
+    else:
+        f = open(f"{src_dir.rstrip('/')}/{name}.c", 'w')
     f.write(f"#include \"{name}.h\"\n#include \"math.h\"\n")
     f.write(body)
     f.close()
