@@ -56,7 +56,32 @@ void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
   }
 }
 
-void interact(unsigned int a, unsigned int b, double *F,
+
+void P2P_Cells(unsigned int A, unsigned int B, std::vector<Cell> &cells,
+  std::vector<Particle> &particles, double *F) {
+    // A - target
+    // B - source
+
+    // P2P for the pair of cells
+    for (unsigned int p1 = 0; p1 < cells[A].nleaf; p1++) {
+      unsigned int l1 = cells[A].leaf[p1];
+      for (unsigned int p2 = 0; p2 < cells[B].nleaf; p2++) {
+        unsigned int l2 = cells[B].leaf[p2];
+        if (l2 != l1) {
+          double dx = particles[l1].x - particles[l2].x;
+          double dy = particles[l1].y - particles[l2].y;
+          double dz = particles[l1].z - particles[l2].z;
+          P2P(dx, dy, dz, particles[p2].q, &F[4 * l1]);
+        }
+      }
+    }
+
+}
+
+
+
+
+void interact(unsigned int A, unsigned int B, double *F,
               std::vector<Cell> &cells, std::vector<Particle> &particles,
               std::stack<std::pair<unsigned int, unsigned int>> &stack,
               unsigned int ncrit, double theta, unsigned int order) {
