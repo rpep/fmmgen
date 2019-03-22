@@ -205,63 +205,15 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
   }
 }
 
-void evaluate_M2P_and_P2P(std::vector<Particle> &particles, unsigned int p,
-                          unsigned int i, std::vector<Cell> &cells,
-                          std::vector<double> &F, unsigned int n_crit,
-                          double theta, unsigned int exporder) {
-  // For cell i, start at cell p (initially 0).
-  double dx, dy, dz, r;
-  unsigned int c;
-  unsigned int j;
-  // If cell p is not a leaf cell:
-  if (cells[p].nleaf >= n_crit) {
-    // Iterate through it's children
-    for (unsigned int octant = 0; octant < 8; octant++) {
-      // If a child exists in a given octant:
-      if (cells[p].nchild & (1 << octant)) {
-        // Get the child's index
-        c = cells[p].child[octant];
-        // Calculate the distance from the particle to the child cell
-        dx = particles[i].x - cells[c].x;
-        dy = particles[i].y - cells[c].y;
-        dz = particles[i].z - cells[c].z;
-        r = sqrt(dx * dx + dy * dy + dz * dz);
-        // Apply the Barnes-Hut criterion:
-        if (cells[c].r > theta * r) {
-          // If the cell is 'near':
-          evaluate_M2P_and_P2P(particles, c, i, cells, F, n_crit, theta,
-                               exporder);
-        } else {
-          // If the cell is 'far', calculate the potential and field
-          // on the particle from the multipole expansion:
-          M2P(dx, dy, dz, cells[c].M.data(), &F[4 * i], exporder);
-        }
-      }
-    }
-  } else {
-    // loop in leaf cell's particles
-    for (unsigned int l = 0; l < (cells[p].nleaf); l++) {
-      // Get the particle index:
-      j = cells[p].leaf[l];
-      if (i != j) {
-        // Calculate the interparticle distance:
-        dx = particles[i].x - particles[j].x;
-        dy = particles[i].y - particles[j].y;
-        dz = particles[i].z - particles[j].z;
-        // Compute the field:
-        P2P(dx, dy, dz, particles[j].q, &F[4 * i]);
-      }
-    }
-  }
-}
-
-void evaluate_approx(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                     std::vector<double> &F, unsigned int n_crit, double theta,
-                     unsigned int exp_order) {
-  for (unsigned int i = 0; i < particles.size(); i++) {
-    evaluate_M2P_and_P2P(particles, 0, i, cells, F, n_crit, theta, exp_order);
-  }
-}
+// void evaluate_approx(std::vector<Particle> &particles, std::vector<Cell>
+// &cells,
+//                      std::vector<double> &F, unsigned int n_crit, double
+//                      theta, unsigned int exp_order) {
+//   for (unsigned int i = 0; i < particles.size(); i++) {
+//     evaluate_M2P_and_P2P(particles, 0, i, cells, F, n_crit, theta,
+//     exp_order);
+//   }
+// }
 
 void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F) {
 #pragma omp parallel for
