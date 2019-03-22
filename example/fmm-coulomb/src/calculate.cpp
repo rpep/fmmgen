@@ -156,7 +156,7 @@ void evaluate_L2L(std::vector<Cell> &cells, unsigned int exporder) {
     for (unsigned int octant = 0; octant < 8; octant++) {
       if (cells[i].nchild & (1 << octant)) {
         // for child in cell i
-        unsigned int c = cells[i].child[i];
+        unsigned int c = cells[i].child[octant];
         double dx = cells[i].x - cells[c].x;
         double dy = cells[i].y - cells[c].y;
         double dz = cells[i].z - cells[c].z;
