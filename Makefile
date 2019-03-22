@@ -13,3 +13,4 @@ clean:
 	rm -rf tests/__pycache__
 	rm -rf *.egg-info
 	rm -rf __pycache__
+	rm -rf *~
