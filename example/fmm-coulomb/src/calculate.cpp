@@ -98,45 +98,40 @@ void interact(unsigned int A, unsigned int B, double *F,
   //   end if
 
   // If both cells are leaf cells
-  // std::cout << "Interact(" << a << ", " << b << ")" << std::endl;
-  if ((cells[a].nleaf < ncrit) && (cells[b].nleaf < ncrit)) {
-    // std::cout << "Both leaves" << std::endl;
-    // P2P for the pair of cells
-    for (unsigned int p1 = 0; p1 < cells[a].nleaf; p1++) {
-      unsigned int l1 = cells[a].leaf[p1];
-      for (unsigned int p2 = 0; p2 < cells[b].nleaf; p2++) {
-        unsigned int l2 = cells[b].leaf[p2];
-        if (l2 != l1) {
-          double dx = particles[p1].x - particles[p2].x;
-          double dy = particles[p1].y - particles[p2].y;
-          double dz = particles[p2].z - particles[p2].z;
-          // std::cout << "P2P disabled" << std::endl;
-          P2P(dx, dy, dz, particles[p2].q, &F[4 * p1]);
-        }
-      }
-    }
+  std::cout << "Interact(" << A << ", " << B << ")" << std::endl;
+  if ((cells[A].nleaf < ncrit) && (cells[B].nleaf < ncrit)) {
+    std::cout << "Both leaves - P2P" << std::endl;
+    P2P_Cells(A, B, cells, particles, F);
 
   } else {
-    /// std::cout << "Not leaves!" << std::endl;
-    double dx = cells[a].x - cells[b].x;
-    double dy = cells[a].y - cells[b].y;
-    double dz = cells[a].z - cells[b].z;
+    std::cout << "Not leaves!" << std::endl;
+    double dx = cells[A].x - cells[B].x;
+    double dy = cells[A].y - cells[B].y;
+    double dz = cells[A].z - cells[B].z;
     double r = sqrt(dx * dx + dy * dy + dz * dz);
-    if ((cells[a].r + cells[b].r) > theta * r) {
-      // std::cout << "M2L" << std::endl;
+
+    // θ · |zA − zB| > (rrenc,A + rrenc,B)
+
+    //std::cout << "cells[a].r = " << cells[a].r << " cells[b].r = " << cells[b].r << " theta * r = " << theta * r << " criteria = " << (cells[a].r + cells[b].r < theta * r) << std::endl;
+
+    if ((cells[A].r + cells[B].r) < theta * r) {
+      std::cout << "M2L" << std::endl;
       // std::cout << "dx = " << dx;
       // std::cout << "dy = " << dy;
       // std::cout << "dz = " << dz;
       // std::cout << "dr = " << r << std::endl;
-
-      M2L(dx, dy, dz, cells[b].M.data(), cells[a].L.data(), order);
+      // M2L(dx, dy, dz, cells[b].M.data(), cells[a].L.data(), order);
     } else {
-      // std::cout << "Adding to stack" << std::endl;
-      std::pair<unsigned int, unsigned int> pair = std::make_pair(a, b);
+      std::cout << "Adding to stack" << std::endl;
+      std::pair<unsigned int, unsigned int> pair = std::make_pair(A, B);
       stack.push(pair);
     }
   }
 }
+
+
+
+
 
 void FMMDualTreeTraversal(std::vector<Particle> &particles,
                           std::vector<Cell> &cells, double *F,
@@ -146,18 +141,23 @@ void FMMDualTreeTraversal(std::vector<Particle> &particles,
   // push pair of root cells (A, B) to stack
   stack.push(std::make_pair<unsigned int, unsigned int>(0, 0));
   // while stack not empty
-  while (stack.size() > 0) {
+  while (!stack.empty()) {
     std::pair<unsigned int, unsigned int> pair = stack.top();
-    stack.pop();
     unsigned int A = pair.first;
     unsigned int B = pair.second;
-    // std::cout << "FMM - A = " << A << " B = " << B << std::endl;
+    stack.pop();
+
+    std::cout << "Stack Size = " << stack.size() << " FMM - A = " << A
+              << " B = " << B << std::endl;
     if (cells[A].r > cells[B].r) {
       //     if target cell is larger then source cell
       //     for all children a of target cell A
-      for (unsigned int octant = 0; octant < 8; octant++) {
+      // DONT CHANGE OCTANT TO UNSIGNED INT!
+      for (int octant = 0; octant < 8; octant++) {
         if (cells[A].nchild & (1 << octant)) {
           unsigned int a = cells[A].child[octant];
+          std::cout << "cell[" << A << "] has octant " << octant
+                    << " which is cell " << a << std::endl;
           interact(a, B, F, cells, particles, stack, ncrit, theta, exporder);
         }
       }
@@ -182,9 +182,9 @@ void evaluate_L2L(std::vector<Cell> &cells, unsigned int exporder) {
       if (cells[i].nchild & (1 << octant)) {
         // for child in cell i
         unsigned int c = cells[i].child[octant];
-        double dx = cells[i].x - cells[c].x;
-        double dy = cells[i].y - cells[c].y;
-        double dz = cells[i].z - cells[c].z;
+        double dx = cells[c].x - cells[i].x;
+        double dy = cells[c].y - cells[i].y;
+        double dz = cells[c].z - cells[i].z;
         L2L(dx, dy, dz, cells[i].L.data(), cells[c].L.data(), exporder);
       }
     }
