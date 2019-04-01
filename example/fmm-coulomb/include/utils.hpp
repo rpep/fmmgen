@@ -1,8 +1,9 @@
 #pragma once
 #include<chrono>
+#include <cstddef>
 
-unsigned int TriangleNumbers(unsigned int n);
-unsigned int Nterms(unsigned int p);
+size_t TriangleNumbers(size_t n);
+size_t Nterms(size_t p);
 
 class Timer {
 private:

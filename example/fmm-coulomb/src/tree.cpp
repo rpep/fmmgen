@@ -4,6 +4,7 @@
 #include <tree.hpp>
 #include <vector>
 
+
 /*!
  * \brief Constructor for Cell class
  *
@@ -17,16 +18,17 @@
  * \param ncrit Number of particles held before cell splits
  */
 
-Cell::Cell(double x, double y, double z, double r, unsigned int parent,
-           unsigned int order, unsigned int level, unsigned int ncrit) {
-#ifdef FMMLIBDEBUG
-  std::cout << "Cell(" << x << "," << y << "," << z << "," << r << "," << parent
-            << "," << order << "," << level << "," << ncrit << ")" << std::endl;
-#endif
+Cell::Cell(double x, double y, double z, double r, size_t parent,
+           size_t order, size_t level, size_t ncrit) {
+// #ifdef FMMLIBDEBUG
+  // std::cout << "Cell(" << x << "," << y << "," << z << "," << r << "," << parent
+  //          << "," << order << "," << level << "," << ncrit << ")" << std::endl;
+// #endif
   this->x = x;
   this->y = y;
   this->z = z;
   this->r = r;
+  this->rmax = sqrt(3*r);
   this->parent = parent;
   this->level = level;
   this->child.resize(8, 0);
@@ -40,7 +42,7 @@ Cell::Cell(double x, double y, double z, double r, unsigned int parent,
 /* Clear expansion array */
 void Cell::clear() { std::fill(M.begin(), M.end(), 0.0); }
 
-void Cell::resize(unsigned int order) { this->M.resize(Nterms(order), 0.0); }
+void Cell::resize(size_t order) { this->M.resize(Nterms(order), 0.0); }
 
 /*! \brief Destructor for the Cell class */
 Cell::~Cell() {
@@ -55,6 +57,7 @@ Cell::Cell(const Cell &other) {
   this->y = other.y;
   this->z = other.z;
   this->r = other.r;
+  this->rmax = other.rmax;
   this->parent = other.parent;
   this->level = other.level;
   this->child = other.child;
@@ -81,6 +84,7 @@ Cell::Cell(Cell &&other) {
   this->y = other.y;
   this->z = other.z;
   this->r = other.r;
+  this->rmax = other.rmax;
   this->parent = other.parent;
   this->level = other.level;
   this->child = other.child;
@@ -101,22 +105,22 @@ Cell::Cell(Cell &&other) {
  * \param cell Cell to start from - user should supply '0' as the function is
  * recursive. \param depth Depth of the tree - user should supply '0'
  */
-void printTreeParticles(std::vector<Cell> &cells, unsigned int cell,
-                        unsigned int depth) {
-  for (unsigned int i = 0; i < depth; i++) {
+void printTreeParticles(std::vector<Cell> &cells, size_t cell,
+                        size_t depth) {
+  for (size_t i = 0; i < depth; i++) {
     std::cout << "         ";
   }
   std::cout << cell << " (" << cells[cell].x << "," << cells[cell].y << ","
             << cells[cell].z << ") : (";
-  unsigned int nchild = 0;
-  for (unsigned int octant = 0; octant < 8; octant++) {
+  int nchild = 0;
+  for (int octant = 0; octant < 8; octant++) {
     if (cells[cell].nchild & (1 << octant)) {
       nchild += 1;
     }
   }
 
   if (nchild == 0) {
-    for (unsigned int i = 0; i < cells[cell].nleaf; i++) {
+    for (size_t i = 0; i < cells[cell].nleaf; i++) {
       std::cout << cells[cell].leaf[i];
       if (i != (cells[cell].nleaf - 1)) {
         std::cout << ",";
@@ -124,7 +128,7 @@ void printTreeParticles(std::vector<Cell> &cells, unsigned int cell,
     }
   }
   std::cout << ")" << std::endl;
-  for (unsigned int octant = 0; octant < 8; octant++) {
+  for (size_t octant = 0; octant < 8; octant++) {
     if (cells[cell].nchild & (1 << octant)) {
       printTreeParticles(cells, cells[cell].child[octant], depth + 1);
     }
@@ -138,10 +142,10 @@ void printTreeParticles(std::vector<Cell> &cells, unsigned int cell,
  * \param ncrit The maximum number of particles in a cell before it splits.
  * \param order Order of multipole expansions.
  */
-void add_child(std::vector<Cell> &cells, int octant, unsigned int p,
-               unsigned int ncrit, unsigned int order) {
+void add_child(std::vector<Cell> &cells, int octant, size_t p,
+               size_t ncrit, size_t order) {
   int c = cells.size();
-  // Do not change octant to unsigned int - otherwise the calculation
+  // Do not change octant to size_t - otherwise the calculation
   // of x, y, z position is not correct.
   double r = cells[p].r / 2.0;
   // std::cout << "Adding child to cell p "<< p<< "Parent(" << cells[p].x << ","
@@ -155,8 +159,8 @@ void add_child(std::vector<Cell> &cells, int octant, unsigned int p,
   std::cout << "Creating Cell(" << x << "," << y << "," << z << "," << r << ")"
             << std::endl;
 #endif
-  unsigned int parent = p;
-  unsigned int level = cells[p].level + 1;
+  size_t parent = p;
+  size_t level = cells[p].level + 1;
   cells.push_back(Cell(x, y, z, r, parent, order, level, ncrit));
   cells[p].child[octant] = c;
   cells[c].nleaf = 0;
@@ -176,13 +180,13 @@ void add_child(std::vector<Cell> &cells, int octant, unsigned int p,
 
 */
 void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles,
-                unsigned int p, unsigned int ncrit, unsigned int order) {
+                size_t p, size_t ncrit, size_t order) {
   // std::cout << "Printing split_cell" << std::endl;
-  unsigned int l, c;
-  // Do not change octant to unsigned int - otherwise the calculation
+  size_t l, c;
+  // Do not change octant to size_t - otherwise the calculation
   // of x, y, z position in add_child is not correct!
   int octant;
-  for (unsigned int i = 0; i < cells[p].leaf.size(); i++) {
+  for (size_t i = 0; i < cells[p].leaf.size(); i++) {
     l = cells[p].leaf[i];
     octant = (particles[l].x > cells[p].x) +
              ((particles[l].y > cells[p].y) << 1) +
@@ -208,12 +212,12 @@ void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles,
  * \returns std::vector of Cells that together are the octree.
  */
 std::vector<Cell> build_tree(std::vector<Particle> &particles, Cell &root,
-                             unsigned int ncrit, unsigned int order) {
+                             size_t ncrit, size_t order) {
   std::vector<Cell> cells;
-  unsigned int curr;
+  size_t curr;
   int octant;
   cells.push_back(root);
-  for (unsigned int i = 0; i < particles.size(); i++) {
+  for (size_t i = 0; i < particles.size(); i++) {
     curr = 0;
     while (cells[curr].nleaf >= ncrit) {
       cells[curr].nleaf += 1;
@@ -238,7 +242,7 @@ std::vector<Cell> build_tree(std::vector<Particle> &particles, Cell &root,
  * \param cells Reference to std::vector containing all cells in a tree.
  */
 void clear_expansions(std::vector<Cell> cells) {
-  for (unsigned int c = 0; c < cells.size(); c++) {
+  for (size_t c = 0; c < cells.size(); c++) {
     std::fill(cells[c].M.begin(), cells[c].M.end(), 0.0);
   }
 }

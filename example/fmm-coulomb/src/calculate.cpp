@@ -15,18 +15,19 @@ inline void P2P(double x, double y, double z, double q, double *F) {
 }
 
 void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                  unsigned int cell, unsigned int ncrit,
-                  unsigned int exporder) {
+                  size_t cell, size_t ncrit,
+                  size_t exporder) {
   if (cells[cell].nleaf > ncrit) {
-    for (unsigned int octant = 0; octant < 8; octant++) {
+    for (size_t octant = 0; octant < 8; octant++) {
       if (cells[cell].nchild & (1 << octant)) {
         evaluate_P2M(particles, cells, cells[cell].child[octant], ncrit,
                      exporder);
       }
     }
-  } else {
-    for (unsigned int i = 0; i < (cells[cell].nleaf); i++) {
-      unsigned int l = cells[cell].leaf[i];
+  }
+  else {
+    for (size_t i = 0; i < (cells[cell].nleaf); i++) {
+      size_t l = cells[cell].leaf[i];
       double dx = particles[l].x - cells[cell].x;
       double dy = particles[l].y - cells[cell].y;
       double dz = particles[l].z - cells[cell].z;
@@ -36,7 +37,7 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
 }
 
 void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                  unsigned int exporder) {
+                  size_t exporder) {
   /*
   evaluate_M2M(particles, cells)
 
@@ -47,8 +48,8 @@ void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
   of the way the tree is constructed.
   */
 
-  for (unsigned int i = cells.size() - 1; i > 0; i--) {
-    unsigned int p = cells[i].parent;
+  for (size_t i = cells.size() - 1; i > 0; i--) {
+    size_t p = cells[i].parent;
     double dx = cells[p].x - cells[i].x;
     double dy = cells[p].y - cells[i].y;
     double dz = cells[p].z - cells[i].z;
@@ -57,131 +58,90 @@ void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
 }
 
 
-void P2P_Cells(unsigned int A, unsigned int B, std::vector<Cell> &cells,
+void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells,
   std::vector<Particle> &particles, double *F) {
     // A - target
     // B - source
 
     // P2P for the pair of cells
-    for (unsigned int p1 = 0; p1 < cells[A].nleaf; p1++) {
-      unsigned int l1 = cells[A].leaf[p1];
-      for (unsigned int p2 = 0; p2 < cells[B].nleaf; p2++) {
-        unsigned int l2 = cells[B].leaf[p2];
-        if (l2 != l1) {
-          double dx = particles[l1].x - particles[l2].x;
-          double dy = particles[l1].y - particles[l2].y;
-          double dz = particles[l1].z - particles[l2].z;
-          P2P(dx, dy, dz, particles[p2].q, &F[4 * l1]);
-        }
-      }
-    }
-
-}
-
-
-
-
-void interact(unsigned int A, unsigned int B, double *F,
-              std::vector<Cell> &cells, std::vector<Particle> &particles,
-              std::stack<std::pair<unsigned int, unsigned int>> &stack,
-              unsigned int ncrit, double theta, unsigned int order) {
-
-  // interact(A, B)
-  //   if A and B are both leafs then
-  //     call P2P kernel
-  //   else
-  //     if A and B satisfy MAC then
-  //       call M2L kernel
-  //     else
-  //       push pair (A, B) to stack
-  //     end if
-  //   end if
-
-  // If both cells are leaf cells
-  std::cout << "Interact(" << A << ", " << B << ")" << std::endl;
-  if ((cells[A].nleaf < ncrit) && (cells[B].nleaf < ncrit)) {
-    std::cout << "Both leaves - P2P" << std::endl;
-    P2P_Cells(A, B, cells, particles, F);
-
-  } else {
-    std::cout << "Not leaves!" << std::endl;
-    double dx = cells[A].x - cells[B].x;
-    double dy = cells[A].y - cells[B].y;
-    double dz = cells[A].z - cells[B].z;
-    double r = sqrt(dx * dx + dy * dy + dz * dz);
-
-    // θ · |zA − zB| > (rrenc,A + rrenc,B)
-
-    //std::cout << "cells[a].r = " << cells[a].r << " cells[b].r = " << cells[b].r << " theta * r = " << theta * r << " criteria = " << (cells[a].r + cells[b].r < theta * r) << std::endl;
-
-    if ((cells[A].r + cells[B].r) < theta * r) {
-      std::cout << "M2L" << std::endl;
-      // std::cout << "dx = " << dx;
-      // std::cout << "dy = " << dy;
-      // std::cout << "dz = " << dz;
-      // std::cout << "dr = " << r << std::endl;
-      // M2L(dx, dy, dz, cells[b].M.data(), cells[a].L.data(), order);
-    } else {
-      std::cout << "Adding to stack" << std::endl;
-      std::pair<unsigned int, unsigned int> pair = std::make_pair(A, B);
-      stack.push(pair);
-    }
-  }
-}
-
-
-
-
-
-void FMMDualTreeTraversal(std::vector<Particle> &particles,
-                          std::vector<Cell> &cells, double *F,
-                          unsigned int ncrit, double theta,
-                          unsigned int exporder) {
-  std::stack<std::pair<unsigned int, unsigned int>> stack;
-  // push pair of root cells (A, B) to stack
-  stack.push(std::make_pair<unsigned int, unsigned int>(0, 0));
-  // while stack not empty
-  while (!stack.empty()) {
-    std::pair<unsigned int, unsigned int> pair = stack.top();
-    unsigned int A = pair.first;
-    unsigned int B = pair.second;
-    stack.pop();
-
-    std::cout << "Stack Size = " << stack.size() << " FMM - A = " << A
-              << " B = " << B << std::endl;
-    if (cells[A].r > cells[B].r) {
-      //     if target cell is larger then source cell
-      //     for all children a of target cell A
-      // DONT CHANGE OCTANT TO UNSIGNED INT!
-      for (int octant = 0; octant < 8; octant++) {
-        if (cells[A].nchild & (1 << octant)) {
-          unsigned int a = cells[A].child[octant];
-          std::cout << "cell[" << A << "] has octant " << octant
-                    << " which is cell " << a << std::endl;
-          interact(a, B, F, cells, particles, stack, ncrit, theta, exporder);
-        }
-      }
-    } else {
-      for (unsigned int i = 0; i < cells[B].nleaf; i++) {
-        // for all children b of source cell B
-        for (unsigned int octant = 0; octant < 8; octant++) {
-          // If a child exists in a given octant:
-          if (cells[B].nchild & (1 << octant)) {
-            unsigned int b = cells[B].child[octant];
-            interact(A, b, F, cells, particles, stack, ncrit, theta, exporder);
-          }
-        }
+  //  std::cout << "    P2P_Cells("<<A<<","<<B<<")"<<std::endl;
+  for (size_t p1 = 0; p1 < cells[A].nleaf; p1++) {
+    size_t l1 = cells[A].leaf[p1];
+    for (size_t p2 = 0; p2 < cells[B].nleaf; p2++) {
+      size_t l2 = cells[B].leaf[p2];
+      if (l2 != l1) {
+	double dx = particles[l1].x - particles[l2].x;
+	double dy = particles[l1].y - particles[l2].y;
+	double dz = particles[l1].z - particles[l2].z;
+	//std::cout << "      P2P("<<l1<<","<< l2 << ")" << std::endl;
+	P2P(dx, dy, dz, particles[p2].q, &F[4 * l1]);
       }
     }
   }
 }
 
-void evaluate_L2L(std::vector<Cell> &cells, unsigned int exporder) {
-  for (unsigned int i = 0; i < cells.size(); i++) {
-    for (unsigned int octant = 0; octant < 8; octant++) {
+
+
+void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double theta, size_t order, size_t ncrit, double *F) {
+  //  std::cout << "interact_dehnen("<<A<<","<<B<<")"<<std::endl;
+  double dx = cells[A].x - cells[B].x;
+  double dy = cells[A].y - cells[B].y;
+  double dz = cells[A].z - cells[B].z;
+  double R = sqrt(dx*dx + dy*dy + dz*dz);
+  // If multipole acceptance criteria for FMM is met:
+  //  std::cout << "  R*theta = " << R << std::endl;
+  //std::cout << "  cells["<<A<<"].nchild = " << cells[A].nchild << std::endl;
+  //std::cout << "  cells["<<B<<"].nchild = " << cells[B].nchild << std::endl;
+
+  //  std::cout << "  cells["<<A<<"].rmax = " << cells[A].rmax << std::endl;
+  // std::cout << "  cells["<<B<<"].rmax = " << cells[B].rmax << std::endl;
+  // std::cout << "  (cells[" << A << "].rmax >= cells[" << B << "].rmax) = " << (cells[A].rmax >= cells[B].rmax) << std::endl;
+
+  if (R*theta > (cells[A].rmax + cells[B].rmax)) {
+    // then evaluate multipole to local from B's multipole to A's local
+    // std::cout << "M2L(" << A << "," << B << ")" << std::endl;
+    M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+  }
+
+  else if (cells[A].nchild == 0 && cells[B].nchild == 0) {
+    if (cells[B].nleaf >= ncrit) {
+      M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+    }
+    else {
+      P2P_Cells(A, B, cells,particles, F);
+    }
+  }
+
+  else if (cells[B].nchild == 0 || (cells[A].rmax >= cells[B].rmax && cells[A].nchild != 0)) {
+      for(int oa = 0; oa < 8; oa++) {
+        // For all 8 children of A, if child exists
+        if (cells[A].nchild & (1 << oa)) {
+          int a = cells[A].child[oa];
+          interact_dehnen(a, B, cells, particles, theta, order, ncrit, F);
+        }
+      }
+  }
+
+  else {
+    for(int ob = 0; ob < 8; ob++) {
+      // for all 8 children of B, if child exists:
+      if (cells[B].nchild & (1 << ob)) {
+        int b = cells[B].child[ob];
+        interact_dehnen(A, b, cells, particles, theta, order, ncrit, F);
+      }
+    }
+  }
+  //  std::cout << "Done interact_dehnen(" << A << "," << B << ")" << std::endl;
+}
+
+
+
+void evaluate_L2L(std::vector<Cell> &cells, size_t exporder) {
+  for (size_t i = 0; i < cells.size(); i++) {
+    for (int octant = 0; octant < 8; octant++) {
       if (cells[i].nchild & (1 << octant)) {
         // for child in cell i
-        unsigned int c = cells[i].child[octant];
+        size_t c = cells[i].child[octant];
         double dx = cells[c].x - cells[i].x;
         double dy = cells[c].y - cells[i].y;
         double dz = cells[c].z - cells[i].z;
@@ -192,14 +152,17 @@ void evaluate_L2L(std::vector<Cell> &cells, unsigned int exporder) {
 }
 
 void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                  double *F, unsigned int ncrit, unsigned int exporder) {
-  for (unsigned int i = 0; i < cells.size(); i++) {
+                  double *F, size_t ncrit, size_t exporder) {
+  for (size_t i = 0; i < cells.size(); i++) {
     if (cells[i].nleaf < ncrit) {
-      for (unsigned int p = 0; p < cells[i].nleaf; p++) {
-        double dx = cells[i].x - particles[p].x;
-        double dy = cells[i].y - particles[p].y;
-        double dz = cells[i].z - particles[p].z;
-        L2P(dx, dy, dz, cells[i].L.data(), &F[4 * p], exporder);
+      // std::cout << "cell " << i << " is a leaf " << std::endl;
+      for (size_t p = 0; p < cells[i].nleaf; p++) {
+	size_t k = cells[i].leaf[p];
+	// std::cout << "L2P from " << i << " to particle " << k << std::endl;
+        double dx = particles[k].x - cells[i].x;
+        double dy = particles[k].y - cells[i].y;
+        double dz = particles[k].z - cells[i].z;
+        L2P(dx, dy, dz, cells[i].L.data(), &F[4 * k], exporder);
       }
     }
   }
@@ -207,18 +170,18 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
 
 // void evaluate_approx(std::vector<Particle> &particles, std::vector<Cell>
 // &cells,
-//                      std::vector<double> &F, unsigned int n_crit, double
-//                      theta, unsigned int exp_order) {
-//   for (unsigned int i = 0; i < particles.size(); i++) {
+//                      std::vector<double> &F, size_t n_crit, double
+//                      theta, size_t exp_order) {
+//   for (size_t i = 0; i < particles.size(); i++) {
 //     evaluate_M2P_and_P2P(particles, 0, i, cells, F, n_crit, theta,
 //     exp_order);
 //   }
 // }
 
 void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F) {
-#pragma omp parallel for
-  for (unsigned int i = 0; i < particles.size(); i++) {
-    for (unsigned int j = 0; j < particles.size(); j++) {
+  //#pragma omp parallel for
+  for (size_t i = 0; i < particles.size(); i++) {
+    for (size_t j = 0; j < particles.size(); j++) {
       if (i != j) {
         double dx = particles[i].x - particles[j].x;
         double dy = particles[i].y - particles[j].y;

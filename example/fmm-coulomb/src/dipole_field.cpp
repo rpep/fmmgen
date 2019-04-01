@@ -35,9 +35,9 @@ public:
 
 
 int main(int argc, char** argv) {
-  unsigned int order = 5;
-  unsigned int ncrit = 100;
-  unsigned int Nparticles = 2;
+  size_t order = 5;
+  size_t ncrit = 100;
+  size_t Nparticles = 2;
   std::vector<double> F_exact(4*Nparticles, 0.0);
   std::vector<double> F_approx(4*Nparticles, 0.0);
 

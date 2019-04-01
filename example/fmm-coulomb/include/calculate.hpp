@@ -14,24 +14,27 @@
 #include <iostream>
 
 void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                  unsigned int cell, unsigned int ncrit, unsigned int exporder);
+                  size_t cell, size_t ncrit, size_t exporder);
 void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                  unsigned int exporder);
+                  size_t exporder);
+
 void FMMDualTreeTraversal(std::vector<Particle> &particles,
                           std::vector<Cell> &cells, double *F,
-                          unsigned int ncrit, double theta,
-                          unsigned int exporder);
+                          size_t ncrit, double theta,
+                          size_t exporder);
 
-void evaluate_L2L(std::vector<Cell> &cells, unsigned int exporder);
+void DualTreeTrav(std::vector<Particle> &particles,
+                          std::vector<Cell> &cells, double *F,
+                          size_t ncrit, double theta,
+                          size_t exporder);
 
-void evaluate_M2P_and_P2P(std::vector<Particle> &particles, unsigned int p,
-                          unsigned int i, std::vector<Cell> &cells,
-                          std::vector<double> &F, unsigned int n_crit,
-                          double theta, unsigned int exporder);
+void evaluate_L2L(std::vector<Cell> &cells, size_t exporder);
 
 void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                  double *F, unsigned int ncrit, unsigned int exporder);
+                  double *F, size_t ncrit, size_t exporder);
 
 void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F);
 // void evaluate_direct(std::vector<Particle> &particles, std::vector<double>
 // &Bx, std::vector<double> &By, std::vector<double> &Bz);
+
+void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double theta, size_t order, size_t ncrit, double *F);
