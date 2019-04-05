@@ -117,7 +117,7 @@ class FunctionPrinter:
         return header, code
 
 
-def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, include_dir=None, src_dir=None):
+def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True):
     """
     Inputs:
 
@@ -139,6 +139,11 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
     CSE, bool:
         Enable common subexpression elimination, to reduce the op count in
         the generated code.
+
+    harmonic_derivs, bool:
+        The harmonicity of the Laplace means that at order p, there are only
+        2p - 1 independent derivatives. Enabling this option therefore computes
+        some derivatives as combinations of others.
     """
     logger.info(f"Generating FMM operators to order {order}")
     assert precision in ['double', 'float'], "Precision must be float or double"
@@ -175,6 +180,9 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         body += code + '\n'
 
         L = sp.Matrix(generate_L_operators(i, symbols, idict))
+
+        print(L)
+
         head, code = p.generate(f'M2L_{i}', 'L', L,
                                list(symbols) +  \
                                [sp.MatrixSymbol('M', Nterms(i), 1)],
@@ -191,7 +199,11 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
-        Fs = sp.Matrix(generate_L2P_operators(i, symbols, idict))
+        L2P = generate_L2P_operators(i, symbols, idict,
+                                     potential=potential,
+                                     field=field)
+
+        Fs = sp.Matrix(L2P)
         head, code = p.generate(f'L2P_{i}', 'F', Fs,
                                list(symbols) + \
                                [sp.MatrixSymbol('L', Nterms(i), 1)],
@@ -200,7 +212,10 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
-        Fs = sp.Matrix(generate_M2P_operators(i, symbols, idict))
+        M2P = generate_M2P_operators(i, symbols, idict,
+                                     potential=potential,
+                                     field=field)
+        Fs = sp.Matrix(M2P)
         head, code = p.generate(f'M2P_{i}', 'F', Fs,
                                 list(symbols) + \
                                 [sp.MatrixSymbol('M', Nterms(i), 1)],

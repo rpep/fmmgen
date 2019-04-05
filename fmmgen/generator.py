@@ -3,8 +3,7 @@ from sympy import itermonomials
 from .expansions import M, M_shift, L, L_shift, phi_deriv
 from sympy.polys.orderings import monomial_key
 
-
-def generate_mappings(order, symbols, key='grevlex'):
+def generate_mappings(order, symbols, key='grevlex', source_order=0):
     """
     generate_mappings(order, symbols, key='grevlex'):
 
@@ -16,9 +15,11 @@ def generate_mappings(order, symbols, key='grevlex'):
     order: int
         Maximum monomial order
 
-    symbols, list
-     List of sympy.Symbol type objects
+    symbols: list
+        List of sympy.Symbol type objects
 
+    source_order: int
+        Integer describing order of o
 
     Returns:
     dict:
@@ -199,7 +200,7 @@ def generate_L_shift_operators(order, symbols, index_dict):
     return L_shift_operators
 
 
-def generate_M2P_operators(order, symbols, index_dict):
+def generate_M2P_operators(order, symbols, index_dict, potential=True, field=True):
     """
     generate_M2L_operators(order, symbols, index_dict)
 
@@ -209,15 +210,25 @@ def generate_M2P_operators(order, symbols, index_dict):
     x, y, z = symbols
     R = (x**2 + y**2 + z**2)**0.5
 
+    terms = []
+
     V = L((0, 0, 0), order, symbols, index_dict).subs('R', R)
-    Fx = -sp.diff(V, x)
-    Fy = -sp.diff(V, y)
-    Fz = -sp.diff(V, z)
-    return [V.subs(R, 'R'), Fx.subs(R, 'R'), Fy.subs(R, 'R'), Fz.subs(R, 'R')]
+    if potential:
+        terms.append(V)
+
+    if field:
+        Fx = -sp.diff(V, x)
+        Fy = -sp.diff(V, y)
+        Fz = -sp.diff(V, z)
+        terms.append(Fx)
+        terms.append(Fy)
+        terms.append(Fz)
+
+    return terms
 
 
 
-def generate_L2P_operators(order, symbols, index_dict):
+def generate_L2P_operators(order, symbols, index_dict, potential=True, field=True):
     """
     generate_L2P_operators(order, symbols, index_dict):
 
@@ -248,14 +259,18 @@ def generate_L2P_operators(order, symbols, index_dict):
     [x*L[1, 0] + y*L[2, 0] + z*L[3, 0] + L[0, 0], -L[1, 0], -L[2, 0], -L[3, 0]]
     """
     x, y, z = symbols
-    R = (x**2 + y**2 + z**2)**0.5
 
-    V = phi_deriv(order, symbols, index_dict, deriv=(0, 0, 0))
-    # Fx = -sp.diff(V, x)
-    # Fy = -sp.diff(V, y)
-    # Fz = -sp.diff(V, z)
-    Fx = -phi_deriv(order, symbols, index_dict, deriv=(1, 0, 0))
-    Fy = -phi_deriv(order, symbols, index_dict, deriv=(0, 1, 0))
-    Fz = -phi_deriv(order, symbols, index_dict, deriv=(0, 0, 1))
+    terms = []
 
-    return [V, Fx, Fy, Fz]
+    if potential:
+        V = phi_deriv(order, symbols, index_dict, deriv=(0, 0, 0))
+        terms.append(V)
+
+    if field:
+        Fx = -phi_deriv(order, symbols, index_dict, deriv=(1, 0, 0))
+        Fy = -phi_deriv(order, symbols, index_dict, deriv=(0, 1, 0))
+        Fz = -phi_deriv(order, symbols, index_dict, deriv=(0, 0, 1))
+        terms.append(Fx)
+        terms.append(Fy)
+        terms.append(Fz)
+    return terms
