@@ -51,6 +51,8 @@ def generate_mappings(order, symbols, key='grevlex', source_order=0):
     >>> print(rmap):
     {0: (0, 0, 0), 1: (1, 0, 0), 2: (0, 1, 0), 3: (0, 0, 1)}
     """
+    if order < source_order:
+        raise ValueError("source_order must be <= order for meaningful calculations to occur")
 
     x, y, z = symbols
     rsymbols = [z, y, x]
