@@ -1,8 +1,8 @@
 import sympy as sp
 from .expansions import M, M_shift, L, L_shift, phi_deriv
 from sympy.polys.orderings import monomial_key
-from sympy.core.numbers import Zero
 from sympy.polys.monomials import itermonomials as sp_itermonomials
+
 
 def itermonomials(symbols, max_degree, min_degree=0):
     monoms = list(sp_itermonomials(symbols, max_degree))
@@ -52,31 +52,33 @@ def generate_mappings(order, symbols, key='grevlex', source_order=0):
     {0: (0, 0, 0), 1: (1, 0, 0), 2: (0, 1, 0), 3: (0, 0, 1)}
     """
     if order < source_order:
-        raise ValueError("source_order must be <= order for meaningful calculations to occur")
+        raise ValueError(
+            "source_order must be <= order for meaningful calculations to occur"
+        )
 
     x, y, z = symbols
     rsymbols = [z, y, x]
-    
+
     monoms = itermonomials(symbols, order, source_order)
     if key:
         monom_key = monomial_key(key, rsymbols)
         monoms = sorted(monoms, key=monom_key)
-        
+
     index_dict = {}
     rindex_dict = {}
     for i, monom in enumerate(monoms):
-        d = monom.as_powers_dict()        
+        d = monom.as_powers_dict()
         n = d[x], d[y], d[z]
         index_dict[n] = i
         rindex_dict[i] = n
     return index_dict, rindex_dict
 
 
-def generate_M_operators(order, symbols, index_dict):
+def generate_M_operators(order, symbols, M_dict):
     """
     generate_M_operators(order, symbols, index_dict):
 
-    Generates multiple operators up to order.
+    Generates multipole operators up to order.
 
     Input:
     order, int:
@@ -104,12 +106,12 @@ def generate_M_operators(order, symbols, index_dict):
     """
     x, y, z = symbols
     M_operators = []
-    for n in index_dict.keys():
+    for n in M_dict.keys():
         M_operators.append(M(n, symbols))
     return M_operators
 
 
-def generate_M_shift_operators(order, symbols, index_dict):
+def generate_M_shift_operators(order, symbols, M_dict, source_order=0):
     """
     generate_M_shift_operators(order, symbols, index_dict):
 
@@ -140,12 +142,13 @@ def generate_M_shift_operators(order, symbols, index_dict):
     """
     x, y, z = symbols
     M_operators = []
-    for n in index_dict.keys():
-        M_operators.append(M_shift(n, order, symbols, index_dict))
+    for n in M_dict.keys():
+        M_operators.append(M_shift(n, order, symbols, M_dict,
+                                   source_order=source_order))
     return M_operators
 
 
-def generate_L_operators(order, symbols, index_dict):
+def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0):
     """
     generate_L_operators(order, symbols, index_dict):
 
@@ -180,12 +183,12 @@ def generate_L_operators(order, symbols, index_dict):
     """
     x, y, z = symbols
     L_operators = []
-    for n in index_dict.keys():
-        L_operators.append(L(n, order, symbols, index_dict))
+    for n in L_dict.keys():
+        L_operators.append(L(n, order, symbols, M_dict, source_order=source_order))
     return L_operators
 
 
-def generate_L_shift_operators(order, symbols, index_dict):
+def generate_L_shift_operators(order, symbols, L_dict, source_order=0):
     """
     generate_L_shift_operators(order, symbols, index_dict):
 
@@ -217,12 +220,13 @@ def generate_L_shift_operators(order, symbols, index_dict):
     """
     x, y, z = symbols
     L_shift_operators = []
-    for n in index_dict.keys():
-        L_shift_operators.append(L_shift(n, order, symbols, index_dict))
+    for n in L_dict.keys():
+        L_shift_operators.append(L_shift(n, order, symbols, L_dict, source_order=source_order))
     return L_shift_operators
 
 
-def generate_M2P_operators(order, symbols, index_dict, potential=True, field=True):
+def generate_M2P_operators(order, symbols, index_dict,
+                           potential=True, field=True):
     """
     generate_M2L_operators(order, symbols, index_dict)
 
@@ -248,9 +252,7 @@ def generate_M2P_operators(order, symbols, index_dict, potential=True, field=Tru
 
     return terms
 
-
-
-def generate_L2P_operators(order, symbols, index_dict, potential=True, field=True):
+def generate_L2P_operators(order, symbols, L_dict, potential=True, field=True):
     """
     generate_L2P_operators(order, symbols, index_dict):
 
@@ -285,13 +287,13 @@ def generate_L2P_operators(order, symbols, index_dict, potential=True, field=Tru
     terms = []
 
     if potential:
-        V = phi_deriv(order, symbols, index_dict, deriv=(0, 0, 0))
+        V = phi_deriv(order, symbols, L_dict, deriv=(0, 0, 0))
         terms.append(V)
 
     if field:
-        Fx = -phi_deriv(order, symbols, index_dict, deriv=(1, 0, 0))
-        Fy = -phi_deriv(order, symbols, index_dict, deriv=(0, 1, 0))
-        Fz = -phi_deriv(order, symbols, index_dict, deriv=(0, 0, 1))
+        Fx = -phi_deriv(order, symbols, L_dict, deriv=(1, 0, 0))
+        Fy = -phi_deriv(order, symbols, L_dict, deriv=(0, 1, 0))
+        Fz = -phi_deriv(order, symbols, L_dict, deriv=(0, 0, 1))
         terms.append(Fx)
         terms.append(Fy)
         terms.append(Fz)
