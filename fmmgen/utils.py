@@ -26,7 +26,10 @@ def Nterms(p):
     Determines the number of terms in a multipole expansion of order
     n
     """
-    return int(sum([TriangleNumbers(i) for i in range(p + 2)]))
+    if p < 0:
+        return 0
+    else:
+        return int(sum([TriangleNumbers(i) for i in range(p + 2)]))
 
 
 def new_itermonomials(symbols, lower_order, upper_order):
