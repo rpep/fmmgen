@@ -25,7 +25,7 @@ def M(n, symbols):
         (factorial(n[0]) * factorial(n[1]) * factorial(n[2]))
 
 
-def M_shift(n, order, symbols, index_dict):
+def M_shift(n, order, symbols, index_dict, source_order=0):
     """
     M_shift(n, order, symbols, index_dict)
 
@@ -44,15 +44,13 @@ def M_shift(n, order, symbols, index_dict):
     """
     x, y, z = symbols
     modn = sum(n)
+    if modn < source_order:
+        raise ValueError('sum(n) must be greater than or equal to source_order')
 
-    grevlexkey = monomial_key('grevlex', symbols)
-    monoms = sorted(itermonomials(symbols, modn), key=grevlexkey)
     result = sp.Integer(0)
-    for monom in monoms:
-        d = monom.as_powers_dict()
-        k = d[x], d[y], d[z]
+    for k in index_dict.keys():
         nmink = n[0] - k[0], n[1] - k[1], n[2] - k[2]
-        if nmink[0] >= 0 and nmink[1] >= 0 and nmink[2] >= 0:
+        if nmink[0] >= 0 and nmink[1] >= 0 and nmink[2] >= 0 and sum(nmink) >= source_order:
             M = sp.MatrixSymbol('M', Nterms(order), 1)[index_dict[nmink]]
             sum_term = M * x**k[0] * y**k[1] * z**k[2] / \
                 (factorial(k[0]) * factorial(k[1])*factorial(k[2]))
@@ -90,26 +88,35 @@ def Phi_derivatives(n, symbols):
     return deriv
 
 
-def L(n, order, symbols, index_dict):
+def L(n, order, symbols, index_dict, eval_derivs=True, source_order=0):
+    assert order >= source_order, "order must be >= source_order"
+    assert sum(n) <= order - source_order, "Terms are zero if sum(n) < order - source_order"
+
     dx, dy, dz = symbols
     modn = sum(n)
     modm_max = order - modn
     grevlexkey = monomial_key('grevlex', [dz, dy, dx])
     monoms = sorted(itermonomials(symbols, modm_max), key=grevlexkey)
 
+    if not eval_derivs:
+        D = sp.MatrixSymbol('D', Nterms(order), 1)
+
     result = sp.Integer(0)
     for monom in monoms:
         d = monom.as_powers_dict()
         m = d[dx], d[dy], d[dz]
         npm = n[0] + m[0], n[1] + m[1], n[2] + m[2]
-        if npm[0] >= 0 and npm[1] >= 0 and npm[2] >= 0:
+        if npm[0] >= 0 and npm[1] >= 0 and npm[2] >= 0 and sum(m) >= source_order:
             M = sp.MatrixSymbol('M', Nterms(order), 1)[index_dict[m]]
-            result += M*Phi_derivatives(npm, symbols)
-
+            if eval_derivs:
+                result += M*Phi_derivatives(npm, symbols)
+            else:
+                result += M*D[index_dict[npm]]
     return result
 
 
-def L_shift(n, order, symbols, index_dict):
+def L_shift(n, order, symbols, index_dict, source_order=0):
+    check = order - source_order
     x, y, z = symbols
     modn = sum(n)
     modk_max = order - modn
@@ -120,7 +127,7 @@ def L_shift(n, order, symbols, index_dict):
         d = monom.as_powers_dict()
         k = d[x], d[y], d[z]
         npk = n[0] + k[0], n[1] + k[1], n[2] + k[2]
-        if npk[0] >= 0 and npk[1] >= 0 and npk[2] >= 0:
+        if npk[0] >= 0 and npk[1] >= 0 and npk[2] >= 0 and sum(npk) <= check:
             L = sp.MatrixSymbol('L', Nterms(order), 1)[index_dict[npk]]
             sum_term = L * x**k[0] * y**k[1] * z**k[2] / \
                 (factorial(k[0]) * factorial(k[1]) * factorial(k[2]))
