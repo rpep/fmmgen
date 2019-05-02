@@ -117,7 +117,7 @@ class FunctionPrinter:
         return header, code
 
 
-def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True):
+def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True, source_order=0):
     """
     Inputs:
 
@@ -144,6 +144,12 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         The harmonicity of the Laplace means that at order p, there are only
         2p - 1 independent derivatives. Enabling this option therefore computes
         some derivatives as combinations of others.
+
+    source_order, int:
+        If source_order > 0 then we set certain multipole terms to zero
+        in the local expansion, and hence they are not used. This is useful if,
+        for example, we only have pure dipoles or quadrupoles in the system.
+
     """
     logger.info(f"Generating FMM operators to order {order}")
     assert precision in ['double', 'float'], "Precision must be float or double"
@@ -162,16 +168,24 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
     symbols = (x, y, z)
     coords = [x, y, z]
 
-    for i in range(order):
+    for i in range(source_order, order):
         logger.info(f"Generating order {i} operators")
-        idict, rdict = generate_mappings(i, symbols)
-        M = sp.Matrix(generate_M_operators(i, symbols, idict))
+        M_dict, _ = generate_mappings(i, symbols,'grevlex',  source_order=source_order)
+        L_dict, _ = generate_mappings(i - source_order, symbols, 'grevlex', source_order=0)
+
+        M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
+
+        # print(f"M = {M}")
+
         head, code = p.generate(f'P2M_{i}', 'M', M,
                                 coords + [q], operator='+=')
         header += head
         body += code
 
-        Ms = sp.Matrix(generate_M_shift_operators(i, symbols, idict))
+        Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
+
+        # print(f"Ms = {Ms}")
+
         head, code = p.generate(f'M2M_{i}', 'Ms', Ms,
                                 list(symbols) + \
                                 [sp.MatrixSymbol('M', Nterms(i), 1)],
@@ -179,9 +193,10 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
-        L = sp.Matrix(generate_L_operators(i, symbols, idict))
+        L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict, source_order=source_order))
 
-        print(L)
+        # print(f"L = {L}")
+
 
         head, code = p.generate(f'M2L_{i}', 'L', L,
                                list(symbols) +  \
@@ -190,7 +205,9 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
-        Ls = sp.Matrix(generate_L_shift_operators(i, symbols, idict))
+
+
+        Ls = sp.Matrix(generate_L_shift_operators(i, symbols, L_dict, source_order=source_order))
         head, code = p.generate(f'L2L_{i}', 'Ls', Ls,
                                list(symbols) + \
                                [sp.MatrixSymbol('L', Nterms(i), 1)],
@@ -199,7 +216,7 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
-        L2P = generate_L2P_operators(i, symbols, idict,
+        L2P = generate_L2P_operators(i, symbols, L_dict,
                                      potential=potential,
                                      field=field)
 
@@ -212,9 +229,9 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
-        M2P = generate_M2P_operators(i, symbols, idict,
+        M2P = generate_M2P_operators(i, symbols, M_dict,
                                      potential=potential,
-                                     field=field)
+                                     field=field, source_order=source_order)
         Fs = sp.Matrix(M2P)
         head, code = p.generate(f'M2P_{i}', 'F', Fs,
                                 list(symbols) + \
@@ -224,15 +241,18 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         body += code + '\n'
 
 
+    print("Here!")
     # We now generate wrapper functions that cover all orders generated.
     unique_funcs = []
     func_definitions = header.split(';\n')
     for func in func_definitions:
-        if '_0' in func:
+        if f'_{source_order}' in func:
             unique_funcs.append(func)
 
-    wrapper_funcs = [f.replace(')', ', int order)').replace('_0', '')
+    wrapper_funcs = [f.replace(')', ', int order)').replace(f'_{source_order}', '')
                      for f in unique_funcs]
+
+    print(wrapper_funcs)
 
     func_definitions += wrapper_funcs
     print('\n'.join(func_definitions))
@@ -243,9 +263,10 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         # Create a switch statement that covers all functions:
         code = wfunc + " {\n"
         code += 'switch (order) {\n'
-        for i in range(order):
+        for i in range(source_order, order):
             code += '  case {}:\n'.format(i)
-            replaced_code = func.replace('_0', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
+            print(func)
+            replaced_code = func.replace(f'_{source_order}', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
             code += '    ' + replaced_code + ';\n    break;\n'
         code += "  }\n}\n"
         print(code)

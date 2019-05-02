@@ -49,7 +49,7 @@ def M_shift(n, order, symbols, index_dict, source_order=0):
     # Must iterate through the full set of monomial terms for the generation,
     # rather than using index_dict, because otherwise we miss terms.
     monoms, _ = gen.generate_mappings(order, symbols, key='grevlex', source_order=0)
-    
+
     x, y, z = symbols
     modn = sum(n)
     if modn < source_order:
@@ -79,7 +79,7 @@ def M_dipole(n, symbols, M_dict):
                          M[M_dict[(0,0,1)]]: muz,
                         }
                        )
-    
+
     # By default set to zero
     replacement_dict = {M[i]: 0 for i in range(Nterms(order))}
     # Replace terms with mux, muy, muz source terms.
@@ -92,8 +92,8 @@ def M_dipole(n, symbols, M_dict):
     replacement_dict[z] = -z
     return term.subs(replacement_dict)
 
-    
-    
+
+
 
 
 @functools.lru_cache(maxsize=None)
@@ -129,8 +129,8 @@ def Phi_derivatives(n, symbols):
 def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
     assert order >= source_order, "order must be >= source_order"
 
-    print(sum(n), order - source_order)
-    
+    #print(sum(n), order - source_order)
+
     assert sum(n) <= order - source_order, "Terms are zero if sum(n) < order - source_order"
 
     dx, dy, dz = symbols
@@ -139,15 +139,15 @@ def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
     print(f'n = {n}')
 
     monoms, _ = gen.generate_mappings(modm_max, symbols, key='grevlex', source_order=0)
-    print(monoms)
-    
+    #print(monoms)
+
     if not eval_derivs:
         D = sp.MatrixSymbol('D', Nterms(order), 1)
 
     result = sp.Integer(0)
     for m in monoms.keys():
         npm = n[0] + m[0], n[1] + m[1], n[2] + m[2]
-        print(f'  m = {m}, npm = {npm}')
+        #print(f'  m = {m}, npm = {npm}')
         if npm[0] >= 0 and npm[1] >= 0 and npm[2] >= 0 and sum(m) >= source_order:
             M = sp.MatrixSymbol('M', Nterms(order), 1)[M_dict[m]]
             if eval_derivs:
@@ -164,12 +164,18 @@ def L_shift(n, order, symbols, L_dict, source_order=0):
 
     # Must iterate through the full set of monomial terms for the generation,
     # rather than using index_dict, because otherwise we miss terms!
-    monoms, _ = gen.generate_mappings(modk_max, symbols, key='grevlex', source_order=source_order)
+    monoms, _ = gen.generate_mappings(modk_max, symbols, key='grevlex', source_order=0)
 
+    print(monoms.keys())
+
+    print(f"L_shift({n}), order = {order}, source_order={source_order}")
     result = sp.Integer(0)
+
     for k in monoms.keys():
         npk = n[0] + k[0], n[1] + k[1], n[2] + k[2]
-        if npk[0] >= 0 and npk[1] >= 0 and npk[2] >= 0 and sum(npk) <= (order - source_order):
+        print(f"  k = {k}, npk = {npk}")
+
+        if npk[0] >= 0 and npk[1] >= 0 and npk[2] >= 0 and sum(npk) <= order-source_order:
             L = sp.MatrixSymbol('L', Nterms(order), 1)[L_dict[npk]]
             sum_term = L * x**k[0] * y**k[1] * z**k[2] / \
                 (factorial(k[0]) * factorial(k[1]) * factorial(k[2]))

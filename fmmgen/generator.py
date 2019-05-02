@@ -225,8 +225,8 @@ def generate_L_shift_operators(order, symbols, L_dict, source_order=0):
     return L_shift_operators
 
 
-def generate_M2P_operators(order, symbols, index_dict,
-                           potential=True, field=True):
+def generate_M2P_operators(order, symbols, M_dict,
+                           potential=True, field=True, source_order=0):
     """
     generate_M2L_operators(order, symbols, index_dict)
 
@@ -238,7 +238,7 @@ def generate_M2P_operators(order, symbols, index_dict,
 
     terms = []
 
-    V = L((0, 0, 0), order, symbols, index_dict).subs('R', R)
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order).subs('R', R)
     if potential:
         terms.append(V)
 
