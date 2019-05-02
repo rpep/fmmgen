@@ -110,9 +110,9 @@ void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<P
 
   if (R*theta > (cells[A].rmax + cells[B].rmax)) {
     M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
-    if (check_L(cells[A])) {
+    /*    if (check_L(cells[A])) {
       std::cout << "A = " << A << " B = " << B << std::endl;
-    }
+      }*/
   }
 
   else if (cells[A].nchild == 0 && cells[B].nchild == 0) {
@@ -144,6 +144,62 @@ void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<P
     }
   }
 }
+
+
+void interact_dehnen_lazy(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles,
+			  double theta, size_t order, size_t ncrit,
+			  std::vector<std::pair<size_t, size_t>> &M2L_list,
+			  std::vector<std::pair<size_t, size_t>> &P2P_list) {
+  //  std::cout << "interact_dehnen("<<A<<","<<B<<")"<<std::endl;
+  double dx = cells[A].x - cells[B].x;
+  double dy = cells[A].y - cells[B].y;
+  double dz = cells[A].z - cells[B].z;
+  double R = sqrt(dx*dx + dy*dy + dz*dz);
+
+  if (R*theta > (cells[A].rmax + cells[B].rmax)) {
+    std::pair<size_t, size_t> m2l_pair = std::make_pair(B, A);
+    M2L_list.push_back(m2l_pair);
+    // M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+    //if (check_L(cells[A])) {
+    //  std::cout << "A = " << A << " B = " << B << std::endl;
+    //}
+  }
+
+  else if (cells[A].nchild == 0 && cells[B].nchild == 0) {
+    if (cells[B].nleaf >= ncrit) {
+      std::pair<size_t, size_t> m2l_pair = std::make_pair(B, A); // call M2L( cells[B].M, cells[A].L);
+      M2L_list.push_back(m2l_pair);
+      M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+    }
+    else {
+      std::pair<size_t, size_t> p2p_pair = std::make_pair(A, B); // call P2P_Cells(A, B)
+      P2P_list.push_back(p2p_pair);
+	// P2P_Cells(A, B, cells,particles, F);
+    }
+  }
+
+  else if (cells[B].nchild == 0 || (cells[A].rmax >= cells[B].rmax && cells[A].nchild != 0)) {
+    for(int oa = 0; oa < 8; oa++) {
+      // For all 8 children of A, if child exists
+      if (cells[A].nchild & (1 << oa)) {
+	int a = cells[A].child[oa];
+	interact_dehnen_lazy(a, B, cells, particles, theta, order, ncrit, M2L_list, P2P_list);
+      }
+    }
+  }
+
+  else {
+    for(int ob = 0; ob < 8; ob++) {
+      // for all 8 children of B, if child exists:
+      if (cells[B].nchild & (1 << ob)) {
+        int b = cells[B].child[ob];
+        interact_dehnen_lazy(A, b, cells, particles, theta, order, ncrit, M2L_list, P2P_list);
+      }
+    }
+  }
+}
+
+
 
 void evaluate_L2L(std::vector<Cell> &cells, size_t exporder) {
   for (size_t i = 0; i < cells.size(); i++) {

@@ -32,3 +32,7 @@ void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F);
 // &Bx, std::vector<double> &By, std::vector<double> &Bz);
 
 void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double theta, size_t order, size_t ncrit, double *F);
+
+void interact_dehnen_lazy(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double theta, size_t order, size_t ncrit,
+                          std::vector<std::pair<size_t, size_t>> &M2L_list,
+                          std::vector<std::pair<size_t, size_t>> &P2P_list);

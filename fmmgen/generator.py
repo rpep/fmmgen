@@ -1,8 +1,8 @@
 import sympy as sp
 from .expansions import M, M_shift, L, L_shift, phi_deriv
 from sympy.polys.orderings import monomial_key
+from .utils import itermonomials, generate_mappings
 from sympy.polys.monomials import itermonomials as sp_itermonomials
-
 
 def itermonomials(symbols, max_degree, min_degree=0):
     monoms = list(sp_itermonomials(symbols, max_degree))

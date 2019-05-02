@@ -2,8 +2,7 @@ import sympy as sp
 from sympy.polys.orderings import monomial_key
 from sympy import factorial
 from sympy import itermonomials
-from fmmgen.utils import q, Nterms
-import fmmgen.generator as gen
+from .utils import q, Nterms, generate_mappings
 import functools
 
 
@@ -48,7 +47,7 @@ def M_shift(n, order, symbols, index_dict, source_order=0):
 
     # Must iterate through the full set of monomial terms for the generation,
     # rather than using index_dict, because otherwise we miss terms.
-    monoms, _ = gen.generate_mappings(order, symbols, key='grevlex', source_order=0)
+    monoms, _ = generate_mappings(order, symbols, key='grevlex', source_order=0)
 
     x, y, z = symbols
     modn = sum(n)
@@ -138,7 +137,7 @@ def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
     modm_max = order - modn
     print(f'n = {n}')
 
-    monoms, _ = gen.generate_mappings(modm_max, symbols, key='grevlex', source_order=0)
+    monoms, _ = generate_mappings(modm_max, symbols, key='grevlex', source_order=0)
     #print(monoms)
 
     if not eval_derivs:
@@ -164,7 +163,7 @@ def L_shift(n, order, symbols, L_dict, source_order=0):
 
     # Must iterate through the full set of monomial terms for the generation,
     # rather than using index_dict, because otherwise we miss terms!
-    monoms, _ = gen.generate_mappings(modk_max, symbols, key='grevlex', source_order=0)
+    monoms, _ = generate_mappings(modk_max, symbols, key='grevlex', source_order=0)
 
     print(monoms.keys())
 

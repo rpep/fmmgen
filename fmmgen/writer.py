@@ -13,10 +13,10 @@ from sympy.printing.ccode import C99CodePrinter
 from sympy.printing.fcode import FCodePrinter
 from sympy.printing.cxxcode import CXX17CodePrinter
 from sympy.printing.llvmjitcode import LLVMJitPrinter
-from .utils import Nterms
+from fmmgen.utils import Nterms
 import textwrap
-from .cse import cse
-from .generator import generate_mappings, generate_M_operators, \
+from fmmgen.cse import cse
+from fmmgen.generator import generate_mappings, generate_M_operators, \
                   generate_M_shift_operators, generate_L_operators, \
                   generate_L_shift_operators, \
                   generate_L2P_operators, \

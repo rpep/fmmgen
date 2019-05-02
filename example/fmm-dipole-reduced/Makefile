@@ -1,6 +1,6 @@
-CXX=g++-8
+CXX=icpc
 #CXXFLAGS=-Iinclude/ -fopenmp -Wall -fsanitize=address -fsanitize=undefined -fsanitize=leak -fno-omit-frame-pointer -fsignaling-nans -g
-CXXFLAGS=-Iinclude/ -fopenmp -Wall -O3
+CXXFLAGS=-Iinclude/ -fopenmp -Wall -O3 -std=c++14
 
 LIBNAME=fmm
 
@@ -10,7 +10,7 @@ SRC = src/operators.c   \
       src/utils.cpp
 
 
-all: generate library scaling reduced
+all: generate library scaling reduced lazy
 
 
 generate:
@@ -31,6 +31,9 @@ scaling: library
 
 reduced: library
 	${CXX} -Wl,-rpath,. -L. ${CXXFLAGS} src/apps/reduced_test.cpp -o reduced -lfmm
+
+lazy: library
+	${CXX} -Wl,-rpath,. -L. ${CXXFLAGS} src/apps/scaling_test_lazy.cpp -o lazy -lfmm
 
 clean:
 	rm -rf build/*
