@@ -1,6 +1,6 @@
-CXX=icpc
-#CXXFLAGS=-Iinclude/ -fopenmp -Wall -fsanitize=address -fsanitize=undefined -fsanitize=leak -fno-omit-frame-pointer -fsignaling-nans -g
-CXXFLAGS=-Iinclude/ -fopenmp -Wall -O3 -std=c++14
+CXX=g++-8
+CXXFLAGS=-Iinclude/ -fopenmp -Wall -fsanitize=address -fsanitize=undefined -fsanitize=leak -fno-omit-frame-pointer -fsignaling-nans -g
+#CXXFLAGS=-Iinclude/ -fopenmp -Wall -O3 -std=c++14
 
 LIBNAME=fmm
 

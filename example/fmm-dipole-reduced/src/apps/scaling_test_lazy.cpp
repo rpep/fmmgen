@@ -82,6 +82,15 @@ int main(int argc, char **argv) {
     std::vector<std::pair<size_t, size_t>> M2L_Cell_list;
     std::vector<std::pair<size_t, size_t>> P2P_Cell_list;
 
+    double *M = new double[cells.size() * (Nterms(order) - Nterms(0))];
+    double *L = new double[cells.size() * Nterms(order - 1)];
+
+    for(int i = 0; i < cells.size(); i++) {
+      cells[i].M = &M[i*(Nterms(order) - Nterms(0))];
+      cells[i].L = &L[i*(Nterms(order - 1))];
+    }
+
+
     interact_dehnen_lazy(0, 0, cells, particles, theta, order, ncrit, M2L_Cell_list, P2P_Cell_list);
 
     std::sort(M2L_Cell_list.begin(), M2L_Cell_list.end(),
@@ -117,7 +126,7 @@ int main(int argc, char **argv) {
             double dx =	cells[A].x - cells[B].x;
             double dy =	cells[A].y - cells[B].y;
             double dz =	cells[A].z - cells[B].z;
-            M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+            M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
             omp_unset_lock(&M2L_locks[A]);
           }
         }
@@ -180,6 +189,9 @@ int main(int argc, char **argv) {
     for(size_t i = 0; i < P2P_locks.size(); i++) {
       omp_destroy_lock(&P2P_locks[i]);
     }
+
+    delete[] M;
+    delete[] L;
 
   }
 

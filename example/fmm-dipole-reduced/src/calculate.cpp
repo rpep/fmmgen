@@ -38,7 +38,7 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
       double dx = (particles[l].x - cells[cell].x);
       double dy = (particles[l].y - cells[cell].y);
       double dz = (particles[l].z - cells[cell].z);
-      M2M(-dx, -dy, -dz, M, cells[cell].M.data(), exporder);
+      M2M(-dx, -dy, -dz, M, cells[cell].M, exporder);
     }
     delete[] M;
   }
@@ -61,7 +61,7 @@ void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
     double dx = cells[p].x - cells[i].x;
     double dy = cells[p].y - cells[i].y;
     double dz = cells[p].z - cells[i].z;
-    M2M(dx, dy, dz, cells[i].M.data(), cells[p].M.data(), exporder);
+    M2M(dx, dy, dz, cells[i].M, cells[p].M, exporder);
   }
 }
 
@@ -90,15 +90,15 @@ void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells,
 }
 
 
-int check_L(Cell &cell) {
-  for(size_t i = 0; i < cell.L.size(); i++) {
-    if (std::isnan(cell.L[i])) {
-      return 1;
-    }
-  }
-  return 0;
-
-}
+// int check_L(Cell &cell) {
+//   for(size_t i = 0; i < cell.L.size(); i++) {
+//     if (std::isnan(cell.L[i])) {
+//       return 1;
+//     }
+//   }
+//   return 0;
+//
+// }
 
 
 void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double theta, size_t order, size_t ncrit, double *F) {
@@ -109,7 +109,7 @@ void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<P
   double R = sqrt(dx*dx + dy*dy + dz*dz);
 
   if (R*theta > (cells[A].rmax + cells[B].rmax)) {
-    M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+    M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
     /*    if (check_L(cells[A])) {
       std::cout << "A = " << A << " B = " << B << std::endl;
       }*/
@@ -117,7 +117,7 @@ void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<P
 
   else if (cells[A].nchild == 0 && cells[B].nchild == 0) {
     if (cells[B].nleaf >= ncrit) {
-      M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+      M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
     }
     else {
       P2P_Cells(A, B, cells,particles, F);
@@ -159,7 +159,7 @@ void interact_dehnen_lazy(size_t A, size_t B, std::vector<Cell> &cells, std::vec
   if (R*theta > (cells[A].rmax + cells[B].rmax)) {
     std::pair<size_t, size_t> m2l_pair = std::make_pair(B, A);
     M2L_list.push_back(m2l_pair);
-    // M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+    // M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
     //if (check_L(cells[A])) {
     //  std::cout << "A = " << A << " B = " << B << std::endl;
     //}
@@ -169,7 +169,7 @@ void interact_dehnen_lazy(size_t A, size_t B, std::vector<Cell> &cells, std::vec
     if (cells[B].nleaf >= ncrit) {
       std::pair<size_t, size_t> m2l_pair = std::make_pair(B, A); // call M2L( cells[B].M, cells[A].L);
       M2L_list.push_back(m2l_pair);
-      M2L(dx, dy, dz, cells[B].M.data(), cells[A].L.data(), order);
+      M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
     }
     else {
       std::pair<size_t, size_t> p2p_pair = std::make_pair(A, B); // call P2P_Cells(A, B)
@@ -210,7 +210,7 @@ void evaluate_L2L(std::vector<Cell> &cells, size_t exporder) {
         double dx = cells[c].x - cells[i].x;
         double dy = cells[c].y - cells[i].y;
         double dz = cells[c].z - cells[i].z;
-        L2L(dx, dy, dz, cells[i].L.data(), cells[c].L.data(), exporder);
+        L2L(dx, dy, dz, cells[i].L, cells[c].L, exporder);
       }
     }
   }
@@ -229,7 +229,7 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
         double dy = particles[k].y - cells[i].y;
         double dz = particles[k].z - cells[i].z;
 	double Fv[4] = {0.0};
-        L2P(dx, dy, dz, cells[i].L.data(), Fv, exporder);
+        L2P(dx, dy, dz, cells[i].L, Fv, exporder);
     	F[3*k+0] -= Fv[0];
     	F[3*k+1] -= Fv[1];
     	F[3*k+2] -= Fv[2];
@@ -249,17 +249,17 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
 // }
 
 void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F) {
-
-    for (size_t i = 0; i < particles.size(); i++) {
-        for (size_t j = 0; j < particles.size(); j++) {
-            if (i != j) {
-              double dx = particles[i].x - particles[j].x;
-              double dy = particles[i].y - particles[j].y;
-              double dz = particles[i].z - particles[j].z;
-              // calculation of R and R3 will be inlined by compiler
-              // so no need to worry about that.
-              P2P(dx, dy, dz, particles[j].mu[0], particles[j].mu[1], particles[j].mu[2], &F[3*i]);
-            }
-        }
+  #pragma omp parallel for
+  for (size_t i = 0; i < particles.size(); i++) {
+    for (size_t j = 0; j < particles.size(); j++) {
+      if (i != j) {
+	double dx = particles[i].x - particles[j].x;
+	double dy = particles[i].y - particles[j].y;
+	double dz = particles[i].z - particles[j].z;
+	// calculation of R and R3 will be inlined by compiler
+	// so no need to worry about that.
+	P2P(dx, dy, dz, particles[j].mu[0], particles[j].mu[1], particles[j].mu[2], &F[3*i]);
+      }
     }
+  }
 }

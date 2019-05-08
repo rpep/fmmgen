@@ -36,8 +36,10 @@ public:
                            This is 0 for the root cell, 1 for the 1st level, etc.
                            */
   std::vector<size_t> child; /*!< \brief Indices of child octants. */
-  std::vector<double> M;
-  std::vector<double> L;
+  //std::vector<double> M;
+  //std::vector<double> L;
+  double *M;
+  double *L;
   std::vector<size_t> leaf; /*!< \brief Indices of particles in the cell. */
   double x; /*!< \brief x coordinates of cell centre. */
   double y; /*!< \brief y coordinates of cell centre. */
@@ -64,6 +66,8 @@ public:
     this->level = other.level;
     this->child = other.child;
     this->M = other.M;
+    this->L = other.L;
+
     this->leaf = other.leaf;
     this->x = other.x;
     this->y = other.y;
