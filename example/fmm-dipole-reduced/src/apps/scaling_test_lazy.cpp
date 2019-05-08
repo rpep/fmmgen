@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
     double *M = new double[cells.size() * (Nterms(order) - Nterms(0))];
     double *L = new double[cells.size() * Nterms(order - 1)];
 
-    for(int i = 0; i < cells.size(); i++) {
+    for(size_t i = 0; i < cells.size(); i++) {
       cells[i].M = &M[i*(Nterms(order) - Nterms(0))];
       cells[i].L = &L[i*(Nterms(order - 1))];
     }
@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
   	    << std::endl;
 
 
-    for(int i = 0; i < M2L_locks.size(); i++) {
+    for(size_t i = 0; i < M2L_locks.size(); i++) {
       omp_destroy_lock(&M2L_locks[i]);
     }
 
