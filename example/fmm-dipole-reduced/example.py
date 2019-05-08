@@ -1,6 +1,6 @@
 import fmmgen
 
-order = 8
+order = 9
 source_order = 1
 cse = True
 

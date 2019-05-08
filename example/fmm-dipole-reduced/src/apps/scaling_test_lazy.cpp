@@ -112,6 +112,8 @@ int main(int argc, char **argv) {
     Timer timer2;
     evaluate_P2M(particles, cells, 0, ncrit, order);
     evaluate_M2M(particles, cells, order);
+    std::cout << "P2M, M2M = " << timer2.elapsed() << std::endl;
+    Timer timer3;
 
     #pragma omp parallel
     {
@@ -141,11 +143,15 @@ int main(int argc, char **argv) {
             omp_unset_lock(&P2P_locks[A]);
           }
         }
+      
       }
     }
 
+    std::cout << "M2L, P2P = " << timer3.elapsed() << std::endl;
+    Timer timer4;
     evaluate_L2L(cells, order);
     evaluate_L2P(particles, cells, F_approx.data(), ncrit, order);
+    std::cout << "L2L, L2P = " << timer4.elapsed() << std::endl;
 
     double t2 = timer2.elapsed();
 
