@@ -36,3 +36,6 @@ void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<P
 void interact_dehnen_lazy(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double theta, size_t order, size_t ncrit,
                           std::vector<std::pair<size_t, size_t>> &M2L_list,
                           std::vector<std::pair<size_t, size_t>> &P2P_list);
+
+void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells,
+	 			       std::vector<Particle> &particles, double *F);
