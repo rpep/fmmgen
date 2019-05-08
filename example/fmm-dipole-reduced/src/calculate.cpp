@@ -249,17 +249,17 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
 // }
 
 void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F) {
-
-    for (size_t i = 0; i < particles.size(); i++) {
-        for (size_t j = 0; j < particles.size(); j++) {
-            if (i != j) {
-              double dx = particles[i].x - particles[j].x;
-              double dy = particles[i].y - particles[j].y;
-              double dz = particles[i].z - particles[j].z;
-              // calculation of R and R3 will be inlined by compiler
+#pragma omp parallel for
+  for (size_t i = 0; i < particles.size(); i++) {
+    for (size_t j = 0; j < particles.size(); j++) {
+      if (i != j) {
+	double dx = particles[i].x - particles[j].x;
+	double dy = particles[i].y - particles[j].y;
+	double dz = particles[i].z - particles[j].z;
+	// calculation of R and R3 will be inlined by compiler
               // so no need to worry about that.
-              P2P(dx, dy, dz, particles[j].mu[0], particles[j].mu[1], particles[j].mu[2], &F[3*i]);
-            }
-        }
+	P2P(dx, dy, dz, particles[j].mu[0], particles[j].mu[1], particles[j].mu[2], &F[3*i]);
+      }
     }
+  }
 }
