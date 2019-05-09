@@ -110,9 +110,6 @@ void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<P
 
   if (R*theta > (cells[A].rmax + cells[B].rmax)) {
     M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
-    /*    if (check_L(cells[A])) {
-      std::cout << "A = " << A << " B = " << B << std::endl;
-      }*/
   }
 
   else if (cells[A].nchild == 0 && cells[B].nchild == 0) {

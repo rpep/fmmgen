@@ -81,16 +81,13 @@ int main(int argc, char **argv) {
     std::cout << "Tree built with " << cells.size() << " cells.\n\n\n" << std::endl;
     std::vector<std::pair<size_t, size_t>> M2L_Cell_list;
     std::vector<std::pair<size_t, size_t>> P2P_Cell_list;
-
-    double *M = new double[cells.size() * (Nterms(order) - Nterms(0))];
-    double *L = new double[cells.size() * Nterms(order - 1)];
+    std::vector<double> M(cells.size() * (Nterms(order) - 1), 0.0);
+    std::vector<double> L(cells.size() * Nterms(order - 1), 0.0);
 
     for(size_t i = 0; i < cells.size(); i++) {
       cells[i].M = &M[i*(Nterms(order) - Nterms(0))];
       cells[i].L = &L[i*(Nterms(order - 1))];
     }
-
-
     interact_dehnen_lazy(0, 0, cells, particles, theta, order, ncrit, M2L_Cell_list, P2P_Cell_list);
 
     std::sort(M2L_Cell_list.begin(), M2L_Cell_list.end(),
@@ -143,7 +140,7 @@ int main(int argc, char **argv) {
             omp_unset_lock(&P2P_locks[A]);
           }
         }
-      
+
       }
     }
 
@@ -155,7 +152,6 @@ int main(int argc, char **argv) {
 
     double t2 = timer2.elapsed();
 
-    double vrel_err = 0;
     double Exrel_err = 0;
     double Eyrel_err = 0;
     double Ezrel_err = 0;
@@ -196,14 +192,8 @@ int main(int argc, char **argv) {
       omp_destroy_lock(&P2P_locks[i]);
     }
 
-    delete[] M;
-    delete[] L;
-
   }
 
-
-
-
-
+  delete[] mu;
   return 0;
 }

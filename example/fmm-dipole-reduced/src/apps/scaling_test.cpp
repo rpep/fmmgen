@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
   double muz_total = 0.0;
 
   double *mu = new double[3*Nparticles];
-  
+
   for (size_t i = 0; i < Nparticles; i++) {
     double mux = distribution(generator);
     double muy = distribution(generator);
@@ -51,13 +51,13 @@ int main(int argc, char **argv) {
     mu[3*i+0] = mux;
     mu[3*i+1] = muy;
     mu[3*i+2] = muz;
-    
+
     Particle tmp(distribution(generator), distribution(generator),
            distribution(generator), &mu[3*i]);
 
     particles.push_back(tmp);
   }
-  
+
 
 
   //std::cout << "\n\n\n" << std::endl;
@@ -72,10 +72,18 @@ int main(int argc, char **argv) {
   for (size_t order = 2; order < maxorder; order++) {
     std::cout << "Order " << order << "\n-------" << std::endl;
     std::vector<double> F_approx(3 * Nparticles, 0.0);
-
+    
     auto root = Cell(0.0, 0.0, 0.0, 1.0, 0, order, 0, ncrit);
     auto cells = build_tree(particles, root, ncrit, order);
+    std::vector<double> M(cells.size() * (Nterms(order) - Nterms(0)), 0.0);
+    std::vector<double> L(cells.size() * Nterms(order - 1), 0.0);
 
+    for(size_t i = 0; i < cells.size(); i++) {
+      std::cout << "M size = " << Nterms(order) - Nterms(0) << std::endl;
+      std::cout << "L size = " << Nterms(order - 1) << std::endl;
+      cells[i].M = &M[i*(Nterms(order) - Nterms(0))];
+      cells[i].L = &L[i*(Nterms(order - 1))];
+    }
     // printTreeParticles(cells, 0, 0);
 
     std::cout << "Tree built with " << cells.size() << " cells.\n\n\n" << std::endl;
@@ -95,7 +103,7 @@ int main(int argc, char **argv) {
     evaluate_P2M(particles, cells, 0, ncrit, order);
     //std::cout << "P2M - done" << std::endl;
     evaluate_M2M(particles, cells, order);
-    
+
     // std::cout << "M2M - done" << std::endl;
 
     // std::cout << "cells.size() = " << cells.size() << std::endl;
@@ -109,7 +117,7 @@ int main(int argc, char **argv) {
     //   std::cout << cells[i].M[nterms-1] << std::endl;
     // }
 
-    interact_dehnen(0, 0, cells, particles, theta, order, ncrit, F_approx.data());    
+    interact_dehnen(0, 0, cells, particles, theta, order, ncrit, F_approx.data());
     evaluate_L2L(cells, order);
     evaluate_L2P(particles, cells, F_approx.data(), ncrit, order);
 
@@ -146,6 +154,8 @@ int main(int argc, char **argv) {
     std::cout << "Approx. calculation  = " << t2 << " seconds. "
               << std::setw(10) << t2 / t1 * 100 << "% of direct time."
               << std::endl;
+
+
   }
 
   return 0;
