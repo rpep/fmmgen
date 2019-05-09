@@ -35,9 +35,9 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
       M[1] = particles[l].mu[1];
       M[2] = particles[l].mu[2];
       // std::cout << "mu[" << l << "] = " << particles[l].mu[0] << std::endl;
-      double dx = (particles[l].x - cells[cell].x);
-      double dy = (particles[l].y - cells[cell].y);
-      double dz = (particles[l].z - cells[cell].z);
+      double dx = (particles[l].r[0] - cells[cell].x);
+      double dy = (particles[l].r[1] - cells[cell].y);
+      double dz = (particles[l].r[2] - cells[cell].z);
       M2M(-dx, -dy, -dz, M, cells[cell].M, exporder);
     }
     delete[] M;
@@ -79,9 +79,9 @@ void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells,
     for (size_t p2 = 0; p2 < cells[B].nleaf; p2++) {
       size_t l2 = cells[B].leaf[p2];
       if (l2 != l1) {
-      	double dx = particles[l1].x - particles[l2].x;
-      	double dy = particles[l1].y - particles[l2].y;
-      	double dz = particles[l1].z - particles[l2].z;
+      	double dx = particles[l1].r[0] - particles[l2].r[0];
+      	double dy = particles[l1].r[1] - particles[l2].r[1];
+      	double dz = particles[l1].r[2] - particles[l2].r[2];
       	//std::cout << "      P2P("<<l1<<","<< l2 << ")" << std::endl;
       	P2P(dx, dy, dz, particles[l2].mu[0], particles[l2].mu[1], particles[l2].mu[2], &F[3 * l1]);
       }
@@ -222,10 +222,10 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
       for (size_t p = 0; p < cells[i].nleaf; p++) {
 	      size_t k = cells[i].leaf[p];
 	    // std::cout << "L2P from " << i << " to particle " << k << std::endl;
-        double dx = particles[k].x - cells[i].x;
-        double dy = particles[k].y - cells[i].y;
-        double dz = particles[k].z - cells[i].z;
-	double Fv[4] = {0.0};
+        double dx = particles[k].r[0] - cells[i].x;
+        double dy = particles[k].r[1] - cells[i].y;
+        double dz = particles[k].r[2] - cells[i].z;
+	double Fv[3] = {0.0};
         L2P(dx, dy, dz, cells[i].L, Fv, exporder);
     	F[3*k+0] -= Fv[0];
     	F[3*k+1] -= Fv[1];
@@ -245,14 +245,14 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
 //   }
 // }
 
-void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F) {
+void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F, size_t n) {
   #pragma omp parallel for
   for (size_t i = 0; i < particles.size(); i++) {
     for (size_t j = 0; j < particles.size(); j++) {
       if (i != j) {
-	double dx = particles[i].x - particles[j].x;
-	double dy = particles[i].y - particles[j].y;
-	double dz = particles[i].z - particles[j].z;
+	double dx = particles[i].r[0] - particles[j].r[0];
+	double dy = particles[i].r[1] - particles[j].r[1];
+	double dz = particles[i].r[2] - particles[j].r[2];
 	// calculation of R and R3 will be inlined by compiler
 	// so no need to worry about that.
 	P2P(dx, dy, dz, particles[j].mu[0], particles[j].mu[1], particles[j].mu[2], &F[3*i]);
