@@ -35,6 +35,8 @@ int main(int argc, char **argv) {
   double muy_total = 0.0;
   double muz_total = 0.0;
 
+  // Array containing r and mu for faster memory access
+  double *r = new double[3*Nparticles];
   double *mu = new double[3*Nparticles];
 
   for (size_t i = 0; i < Nparticles; i++) {
@@ -50,12 +52,18 @@ int main(int argc, char **argv) {
     mux_total += mux;
     muy_total += muy;
     muz_total += muz;
+
+
+    r[3*i+0] = distribution(generator);
+    r[3*i+1] = distribution(generator);
+    r[3*i+2] = distribution(generator);
     mu[3*i+0] = mux;
     mu[3*i+1] = muy;
     mu[3*i+2] = muz;
+    
 
-    Particle tmp(distribution(generator), distribution(generator),
-           distribution(generator), &mu[3*i]);
+    Particle tmp(&r[3*i],
+		 &mu[3*i]);
 
     particles.push_back(tmp);
   }
@@ -67,7 +75,7 @@ int main(int argc, char **argv) {
 
   std::cout << "Direct\n------" << std::endl;
   Timer timer1;
-  evaluate_direct(particles, F_exact);
+  evaluate_direct(particles, F_exact, Nparticles);
   double t1 = timer1.elapsed();
   std::cout << "Time = " << t1 << std::endl;
 
@@ -201,7 +209,7 @@ int main(int argc, char **argv) {
 
   }
 
-
+  delete[] mu;
 
 
 

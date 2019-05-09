@@ -191,9 +191,9 @@ void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles, size
   int octant;
   for(size_t i = 0; i < cells[p].leaf.size(); i++) {
     l = cells[p].leaf[i];
-    octant = (particles[l].x > cells[p].x) +
-      ((particles[l].y > cells[p].y) << 1) +
-      ((particles[l].z > cells[p].z) << 2);
+    octant = (particles[l].r[0] > cells[p].x) +
+      ((particles[l].r[1] > cells[p].y) << 1) +
+      ((particles[l].r[2] > cells[p].z) << 2);
 
     if (!((cells[p].nchild) & (1 << octant))) {
       add_child(cells, octant, p, ncrit, order);
@@ -223,7 +223,7 @@ std::vector<Cell> build_tree(std::vector<Particle> &particles, Cell &root, size_
     curr = 0;
     while (cells[curr].nleaf >= ncrit) {
       cells[curr].nleaf += 1;
-      octant = (particles[i].x > cells[curr].x) + ((particles[i].y > cells[curr].y) << 1) + ((particles[i].z > cells[curr].z) << 2);
+      octant = (particles[i].r[0] > cells[curr].x) + ((particles[i].r[1] > cells[curr].y) << 1) + ((particles[i].r[2] > cells[curr].z) << 2);
       if (!(cells[curr].nchild & (1 << octant))) {
         add_child(cells, octant, curr, ncrit, order);
       }

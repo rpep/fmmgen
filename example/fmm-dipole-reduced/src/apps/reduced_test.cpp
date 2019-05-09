@@ -33,11 +33,18 @@ int main(int argc, char **argv) {
   double muz_total = 0.0;
 
   double *mu = new double[3*Nparticles];
-  
+  double *r = new double[3*Nparticles];
+ 
   for (size_t i = 0; i < Nparticles; i++) {
+    
     double mux = distribution(generator);
     double muy = distribution(generator);
     double muz = distribution(generator);
+
+    double x = distribution(generator);
+    double y = distribution(generator);
+    double z = distribution(generator);
+    
     double mod = std::sqrt(mux*mux + muy*muy + muz*muz);
     
     mux /= mod;
@@ -47,14 +54,14 @@ int main(int argc, char **argv) {
     mu[3*i+0] = mux;
     mu[3*i+1] = muy;
     mu[3*i+2] = muz;
-
+    r[3*i+0] = x;
+    r[3*i+1] = y;
+    r[3*i+2] = z;
     mux_total += mux;
     muy_total += muy;
     muz_total += muz;
 
-    Particle tmp(distribution(generator), distribution(generator),
-           distribution(generator), &mu[3*i]);
-
+    Particle tmp(&r[3*i], &mu[3*i]);
     particles.push_back(tmp);
   }
   
@@ -65,7 +72,7 @@ int main(int argc, char **argv) {
 
   std::cout << "Direct\n------" << std::endl;
   Timer timer1;
-  evaluate_direct(particles, F_exact);
+  evaluate_direct(particles, F_exact, Nparticles);
   double t1 = timer1.elapsed();
   std::cout << "Time = " << t1 << std::endl;
 

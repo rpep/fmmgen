@@ -33,13 +33,18 @@ int main(int argc, char **argv) {
   double muz_total = 0.0;
 
   double *mu = new double[3*Nparticles];
+  double *r = new double[3*Nparticles];
   
   for (size_t i = 0; i < Nparticles; i++) {
     double mux = distribution(generator);
     double muy = distribution(generator);
     double muz = distribution(generator);
-
+    double x = distribution(generator);
+    double y = distribution(generator);
+    double z = distribution(generator);
+    
     double mod = std::sqrt(mux*mux + muy*muy + muz*muz);
+
     mux /= mod;
     muy /= mod;
     muz /= mod;
@@ -52,20 +57,16 @@ int main(int argc, char **argv) {
     mu[3*i+1] = muy;
     mu[3*i+2] = muz;
     
-    Particle tmp(distribution(generator), distribution(generator),
-           distribution(generator), &mu[3*i]);
-
+    Particle tmp(&r[3*i], &mu[3*i]);
     particles.push_back(tmp);
   }
   
-
-
   //std::cout << "\n\n\n" << std::endl;
 
 
   std::cout << "Direct\n------" << std::endl;
   Timer timer1;
-  evaluate_direct(particles, F_exact);
+  evaluate_direct(particles, F_exact, Nparticles);
   double t1 = timer1.elapsed();
   std::cout << "Time = " << t1 << std::endl;
 
@@ -122,17 +123,17 @@ int main(int argc, char **argv) {
     std::string filename = "error_order_" + std::to_string(order) + ".txt";
     std::ofstream fout(filename);
     for (size_t i = 0; i < particles.size(); i++) {
-       double exerr =
-           (F_exact[3 * i + 0] - F_approx[3 * i + 0]) / F_exact[3 * i + 0];
-       double eyerr =
-           (F_exact[3 * i + 1] - F_approx[3 * i + 1]) / F_exact[3 * i + 1];
-       double ezerr =
-           (F_exact[3 * i + 2] - F_approx[3 * i + 2]) / F_exact[3 * i + 2];
-
-       fout << exerr << "," << eyerr << "," << ezerr << std::endl;
-       Exrel_err += sqrt(exerr * exerr);
-       Eyrel_err += sqrt(eyerr * eyerr);
-       Ezrel_err += sqrt(ezerr * ezerr);
+      double exerr =
+	(F_exact[3 * i + 0] - F_approx[3 * i + 0]) / F_exact[3 * i + 0];
+      double eyerr =
+	(F_exact[3 * i + 1] - F_approx[3 * i + 1]) / F_exact[3 * i + 1];
+      double ezerr =
+	(F_exact[3 * i + 2] - F_approx[3 * i + 2]) / F_exact[3 * i + 2];
+      
+      fout << exerr << "," << eyerr << "," << ezerr << std::endl;
+      Exrel_err += sqrt(exerr * exerr);
+      Eyrel_err += sqrt(eyerr * eyerr);
+      Ezrel_err += sqrt(ezerr * ezerr);
     }
 
     Exrel_err /= particles.size();

@@ -9,11 +9,9 @@
 /*! \brief Particle class used to store position and dipole moment strength. */
 class Particle {
 public:
-  double x; /*!< x position of the particle */
-  double y; /*!< y position of the particle */
-  double z; /*!< z position of the particle */
-  double *mu;
-  Particle(double x, double y, double z, double *mu) : x(x), y(y), z(z), mu(mu) {}
+  double *r; // Address of 3-vector position of the particle
+  double *mu; // Address of 3-vector spin direction
+  Particle(double *r, double *mu) : r(r), mu(mu) {}
 };
 
 class Cell {
