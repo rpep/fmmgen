@@ -142,10 +142,13 @@ void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<P
   }
 }
 
-void interact_dehnen_lazy(const size_t A, const size_t B, const std::vector<Cell> &cells, const std::vector<Particle> &particles,
-			  const double theta, const size_t order, const size_t ncrit,
-			  std::vector<std::pair<size_t, size_t>> &M2L_list,
-			  std::vector<std::pair<size_t, size_t>> &P2P_list) {
+void interact_dehnen_lazy(const size_t A, const size_t B,
+                          const std::vector<Cell> &cells,
+                          const std::vector<Particle> &particles,
+			              const double theta, const size_t order,
+                          const size_t ncrit,
+                          std::vector<std::pair<size_t, size_t>> &M2L_list,
+                          std::vector<std::pair<size_t, size_t>> &P2P_list) {
   const double dx = cells[A].x - cells[B].x;
   const double dy = cells[A].y - cells[B].y;
   const double dz = cells[A].z - cells[B].z;
@@ -176,8 +179,8 @@ void interact_dehnen_lazy(const size_t A, const size_t B, const std::vector<Cell
     for(int oa = 0; oa < 8; oa++) {
       // For all 8 children of A, if child exists
       if (cells[A].nchild & (1 << oa)) {
-	int a = cells[A].child[oa];
-	interact_dehnen_lazy(a, B, cells, particles, theta, order, ncrit, M2L_list, P2P_list);
+    	int a = cells[A].child[oa];
+    	interact_dehnen_lazy(a, B, cells, particles, theta, order, ncrit, M2L_list, P2P_list);
       }
     }
   }
@@ -256,17 +259,18 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
 }
 
 void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F, size_t n) {
-#pragma omp parallel for schedule(runtime)
+ #pragma omp parallel for schedule(runtime)
   for (size_t i = 0; i < n; i++) {
-
     for (size_t j = 0; j < n; j++) {
-    	double dx = particles[i].r[0] - particles[j].r[0];
-    	double dy = particles[i].r[1] - particles[j].r[1];
-    	double dz = particles[i].r[2] - particles[j].r[2];
-    	double mux = particles[j].mu[0];
-    	double muy = particles[j].mu[1];
-    	double muz = particles[j].mu[2];
-    	P2P(dx, dy, dz, mux, muy, muz, &F[3*i]);
+        if (i != j) {
+        	double dx = particles[i].r[0] - particles[j].r[0];
+        	double dy = particles[i].r[1] - particles[j].r[1];
+        	double dz = particles[i].r[2] - particles[j].r[2];
+        	double mux = particles[j].mu[0];
+        	double muy = particles[j].mu[1];
+        	double muz = particles[j].mu[2];
+        	P2P_noatomic(dx, dy, dz, mux, muy, muz, &F[3*i]);
+        }
       }
   }
 }
