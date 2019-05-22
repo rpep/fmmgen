@@ -1,0 +1,9 @@
+*.o
+*.txt
+*.so
+*.out
+*.gch
+*~
+*.egg-info/*
+*.ipynb
+sandbox/*

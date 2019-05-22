@@ -44,7 +44,6 @@ class FunctionPrinter:
             logger.info(f"CSE is enabled")
         else:
             logger.info(f"CSE is disabled")
-
         self.debug = debug
         try:
             self.printer = language_mapping[language]()
@@ -54,17 +53,7 @@ class FunctionPrinter:
         self.precision = precision
         assert self.precision in ['float', 'double']
 
-    def _generate_body(self, LHS, RHS, operator='='):
-        # Note: replacement will *not* work with
-        # common-subexpresion factoring.
-        # Need to think more deeply about how
-        # to do this. Given CSE seems to work less well
-        # for expressions containing matrices, will
-        # leave this til later to deal with.
-        # sub_exprs, simp_rhs = sp.cse(RHS)
-        #
-        # code = self.printer.doprint(simp_RHS, assign_to=LHS)
-
+    def _generate_body(self, LHS, RHS, operator='=', atomic=False):
         # Find the reduced RHS equation.
         logger.debug(f"Generating body for LHS = {str(LHS)}")
         code = ""
@@ -81,12 +70,21 @@ class FunctionPrinter:
 
             for i, (var, sub_expr) in enumerate(sub_expressions):
                 code += self.printer.doprint(sub_expr, assign_to=var) + "\n"
-            code += self.printer.doprint(rRHS, assign_to=LHS).replace('=',
-                                                                      operator)
 
+
+            tmp = self.printer.doprint(rRHS, assign_to=LHS).replace('=',
+                                                                      operator)
         else:
-            code += self.printer.doprint(RHS, assign_to=LHS).replace('=',
+            tmp = self.printer.doprint(RHS, assign_to=LHS).replace('=',
                                                                      operator)
+        if atomic:
+            print(tmp)
+            lines = tmp.split('\n')
+            for l in lines:
+                code += '#pragma omp atomic\n'
+                code += l + '\n'
+        else:
+            code += tmp
 
         return code
 
@@ -106,18 +104,17 @@ class FunctionPrinter:
                                      zip(types, inputs)])
         return "void {}({})".format(name, combined_inputs)
 
-    def generate(self, name, LHS, RHS, inputs, operator='='):
+    def generate(self, name, LHS, RHS, inputs, operator='=', atomic=False):
         header = self._generate_header(name, LHS, RHS, inputs)
         code = header + ' {\n'
-        code += self._generate_body(LHS, RHS, operator)
+        code += self._generate_body(LHS, RHS, operator, atomic=atomic)
         code += '\n}\n'
-
         header += ';\n'
 
         return header, code
 
 
-def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True, source_order=0):
+def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True, source_order=0, atomic=False):
     """
     Inputs:
 
@@ -189,7 +186,7 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         head, code = p.generate(f'M2M_{i}', 'Ms', Ms,
                                 list(symbols) + \
                                 [sp.MatrixSymbol('M', Nterms(i), 1)],
-                                operator="+=")
+                                operator="+=", atomic=atomic)
         header += head
         body += code + '\n'
 
@@ -201,17 +198,16 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         head, code = p.generate(f'M2L_{i}', 'L', L,
                                list(symbols) +  \
                                [sp.MatrixSymbol('M', Nterms(i), 1)],
-                               operator="+=")
+                                operator="+=", atomic=atomic)
         header += head
         body += code + '\n'
-
 
 
         Ls = sp.Matrix(generate_L_shift_operators(i, symbols, L_dict, source_order=source_order))
         head, code = p.generate(f'L2L_{i}', 'Ls', Ls,
                                list(symbols) + \
                                [sp.MatrixSymbol('L', Nterms(i), 1)],
-                               operator="+=")
+                                operator="+=", atomic=atomic)
 
         header += head
         body += code + '\n'
@@ -224,7 +220,7 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         head, code = p.generate(f'L2P_{i}', 'F', Fs,
                                list(symbols) + \
                                [sp.MatrixSymbol('L', Nterms(i), 1)],
-                               operator="+=")
+                                operator="+=", atomic=atomic)
 
         header += head
         body += code + '\n'
@@ -236,7 +232,7 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         head, code = p.generate(f'M2P_{i}', 'F', Fs,
                                 list(symbols) + \
                                 [sp.MatrixSymbol('M', Nterms(i), 1)],
-                                operator="+=")
+                                operator="+=", atomic=atomic)
         header += head
         body += code + '\n'
 
@@ -276,9 +272,8 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         f = open(f"{name}.h", 'w')
     else:
         f = open(f"{include_dir.rstrip('/')}/{name}.h", 'w')
-    f.write(f"#ifndef {name.upper()}_H\n#define {name.upper()}_H\n")
+    f.write(f"#pragma once\n")
     f.write(header)
-    f.write("#endif")
     f.close()
 
     if not src_dir:

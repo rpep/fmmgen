@@ -61,10 +61,7 @@ int main(int argc, char **argv) {
     mu[3*i+1] = muy;
     mu[3*i+2] = muz;
 
-
-    Particle tmp(&r[3*i],
-		 &mu[3*i]);
-
+    Particle tmp(&r[3*i], &mu[3*i]);
     particles.push_back(tmp);
   }
 
@@ -78,85 +75,55 @@ int main(int argc, char **argv) {
   evaluate_direct(particles, F_exact, Nparticles);
   double t1 = timer1.elapsed();
   std::cout << "Time = " << t1 << std::endl;
+  std::vector<double> F_approx(3 * Nparticles, 0.0);
 
   for (size_t order = 2; order < maxorder; order++) {
-    std::cout << "Order " << order << "\n-------" << std::endl;
-    std::vector<double> F_approx(3 * Nparticles, 0.0);
-
     auto root = Cell(0.0, 0.0, 0.0, 1.0, 0, order, 0, ncrit);
     auto cells = build_tree(particles, root, ncrit, order);
-
     std::cout << "Tree built with " << cells.size() << " cells.\n\n\n" << std::endl;
-    std::vector<std::pair<size_t, size_t>> M2L_Cell_list;
-    std::vector<std::pair<size_t, size_t>> P2P_Cell_list;
+    std::vector<std::pair<size_t, size_t>> M2L_list;
+    std::vector<std::pair<size_t, size_t>> P2P_list;
+    interact_dehnen_lazy(0, 0, cells, particles, theta, order, ncrit, M2L_list, P2P_list);
+    std::sort(M2L_list.begin(), M2L_list.end(),
+           [](std::pair<size_t, size_t> &left, std::pair<size_t, size_t> &right) {
+                return left.first < right.first;
+               }
+           );
+
+    std::cout << "M2L_list size = " << M2L_list.size() << std::endl;
+    std::cout << "P2P_list size = " << P2P_list.size() << std::endl;
+
+
+    std::cout << "Order " << order << "\n-------" << std::endl;
+    std::fill(F_approx.begin(), F_approx.end(), 0);
+
     std::vector<double> M(cells.size() * (Nterms(order) - 1), 0.0);
     std::vector<double> L(cells.size() * Nterms(order - 1), 0.0);
-
     for(size_t i = 0; i < cells.size(); i++) {
       cells[i].M = &M[i*(Nterms(order) - Nterms(0))];
       cells[i].L = &L[i*(Nterms(order - 1))];
     }
-    interact_dehnen_lazy(0, 0, cells, particles, theta, order, ncrit, M2L_Cell_list, P2P_Cell_list);
-
-    std::sort(M2L_Cell_list.begin(), M2L_Cell_list.end(),
-             [](std::pair<size_t, size_t> &left, std::pair<size_t, size_t> &right) {
-  	            return left.first < right.first;
-  	           }
-             );
-
-    std::vector<omp_lock_t> M2L_locks(M2L_Cell_list.size());
-    for(size_t i = 0; i < M2L_locks.size(); i++) {
-      omp_init_lock(&M2L_locks[i]);
-    }
-
-    std::vector<omp_lock_t> P2P_locks(P2P_Cell_list.size());
-    for(size_t i = 0; i < P2P_locks.size(); i++) {
-      omp_init_lock(&P2P_locks[i]);
-    }
 
     Timer timer2;
-    evaluate_P2M(particles, cells, 0, ncrit, order);
-    evaluate_M2M(particles, cells, order);
-    std::cout << "P2M, M2M = " << timer2.elapsed() << std::endl;
-    Timer timer3;
 
     #pragma omp parallel
     {
-      #pragma omp single nowait
-      {
-        for(size_t i = 0; i < M2L_Cell_list.size(); i++) {
-          #pragma omp task firstprivate(i)
-          {
-            size_t B = M2L_Cell_list[i].first;
-            size_t A = M2L_Cell_list[i].second;
-            omp_set_lock(&M2L_locks[A]);
-            double dx =	cells[A].x - cells[B].x;
-            double dy =	cells[A].y - cells[B].y;
-            double dz =	cells[A].z - cells[B].z;
-            M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
-            omp_unset_lock(&M2L_locks[A]);
-          }
-        }
-
-        for(size_t i = 0; i < P2P_Cell_list.size(); i++) {
-          #pragma omp task firstprivate(i)
-          {
-            size_t A = P2P_Cell_list[i].first;
-            size_t B = P2P_Cell_list[i].second;
-            omp_set_lock(&P2P_locks[A]);
-            P2P_Cells(A, B, cells, particles, F_approx.data());
-            omp_unset_lock(&P2P_locks[A]);
-          }
-        }
-
-      }
+        evaluate_P2M(particles, cells, 0, ncrit, order);
+        #pragma omp barrier
+        evaluate_M2M(particles, cells, order);
+        #pragma omp barrier
+        evaluate_M2L_lazy(cells,M2L_list,order);
+        #pragma omp barrier
+        std::cout << "Done M2L" << std::endl;
+        evaluate_P2P_lazy(cells, particles,P2P_list, F_approx);
+        std::cout << "Done P2P" << std::endl;
+        #pragma omp barrier
+        evaluate_L2L(cells, order);
+        std::cout << "Done L2L" << std::endl;
+        #pragma omp barrier
+        evaluate_L2P(particles, cells, F_approx.data(), ncrit, order);
+        std::cout << "Done L2P" << std::endl;
     }
-
-    std::cout << "M2L, P2P = " << timer3.elapsed() << std::endl;
-    Timer timer4;
-    evaluate_L2L(cells, order);
-    evaluate_L2P(particles, cells, F_approx.data(), ncrit, order);
-    std::cout << "L2L, L2P = " << timer4.elapsed() << std::endl;
 
     double t2 = timer2.elapsed();
 
@@ -191,17 +158,9 @@ int main(int argc, char **argv) {
   	    << std::setw(10) << t2 / t1 * 100 << "% of direct time."
   	    << std::endl;
 
-
-    for(size_t i = 0; i < M2L_locks.size(); i++) {
-      omp_destroy_lock(&M2L_locks[i]);
-    }
-
-    for(size_t i = 0; i < P2P_locks.size(); i++) {
-      omp_destroy_lock(&P2P_locks[i]);
-    }
-
   }
 
+  delete[] r;
   delete[] mu;
   return 0;
 }

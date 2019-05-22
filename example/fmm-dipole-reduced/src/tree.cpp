@@ -171,7 +171,7 @@ void add_child(std::vector<Cell> &cells, int octant, size_t p, size_t ncrit, siz
     cells[p].nchild = (cells[p].nchild | (1 << octant));
 }
 
-/*! \brief Splits a cells
+/*! \brief Splits a cell
 * When a cell holds more than ncrit particles, the cell must be split.
 * Children are added to thec cells list if they have not already been created,
 * and particles are reassigned to these child cells.
