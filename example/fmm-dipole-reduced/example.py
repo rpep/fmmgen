@@ -1,10 +1,13 @@
 import fmmgen
 
-order = 6
+order = 10
 source_order = 1
 cse = True
 atomic = True
-fmmgen.generate_code(order, "operators", CSE=cse,
+precision='double'
+fmmgen.generate_code(order, "operators",
+                     precision=precision,
+                     CSE=cse,
                      generate_cython_wrapper=False,
                      potential=False,
                      field=True,

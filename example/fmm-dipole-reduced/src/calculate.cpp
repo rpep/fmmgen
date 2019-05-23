@@ -31,28 +31,32 @@ void P2P_noatomic(double x, double y, double z, double mux, double muy, double m
 
 void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
 		          size_t cell, size_t ncrit, size_t exporder) {
-  if (cells[cell].nleaf >= ncrit) {
-    for (size_t octant = 0; octant < 8; octant++) {
-      if (cells[cell].nchild & (1 << octant)) {
-	    evaluate_P2M(particles, cells, cells[cell].child[octant], ncrit, exporder);
-      }
-    }
-  }
-  else {
-    double *M = new double[Nterms(exporder+1)]();
-    for(size_t i = 0; i < (cells[cell].nleaf); i++) {
-      size_t l = cells[cell].leaf[i];
+  // if (cells[cell].nleaf >= ncrit) {
+  //   for (size_t octant = 0; octant < 8; octant++) {
+  //     if (cells[cell].nchild & (1 << octant)) {
+	//     evaluate_P2M(particles, cells, cells[cell].child[octant], ncrit, exporder);
+  //     }
+  //   }
+  // }
+  // else {
+  double *M = new double[Nterms(exporder+1)]();
+  #pragma omp for
+  for(size_t c = 0; c < cells.size(); c++) {
+    if (cells[c].nleaf < ncrit) {
+    for(size_t i = 0; i < cells[c].nleaf; i++) {
+      size_t l = cells[c].leaf[i];
       M[0] = particles[l].mu[0];
       M[1] = particles[l].mu[1];
       M[2] = particles[l].mu[2];
       // std::cout << "mu[" << l << "] = " << particles[l].mu[0] << std::endl;
-      double dx = (particles[l].r[0] - cells[cell].x);
-      double dy = (particles[l].r[1] - cells[cell].y);
-      double dz = (particles[l].r[2] - cells[cell].z);
-      M2M(-dx, -dy, -dz, M, cells[cell].M, exporder);
+      double dx = (particles[l].r[0] - cells[c].x);
+      double dy = (particles[l].r[1] - cells[c].y);
+      double dz = (particles[l].r[2] - cells[c].z);
+      M2M(-dx, -dy, -dz, M, cells[c].M, exporder);
     }
-    delete[] M;
+   }
   }
+  delete[] M;
 }
 
 void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
@@ -67,12 +71,12 @@ void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
   of the way the tree is constructed.
   */
   #pragma omp for
-  for (size_t i = cells.size() - 1; i > 0; i--) {
-    size_t p = cells[i].parent;
-    double dx = cells[p].x - cells[i].x;
-    double dy = cells[p].y - cells[i].y;
-    double dz = cells[p].z - cells[i].z;
-    M2M(dx, dy, dz, cells[i].M, cells[p].M, exporder);
+  for (size_t c = 1; c < cells.size(); c++) {
+    size_t p = cells[c].parent;
+    double dx = cells[p].x - cells[c].x;
+    double dy = cells[p].y - cells[c].y;
+    double dz = cells[p].z - cells[c].z;
+    M2M(dx, dy, dz, cells[c].M, cells[p].M, exporder);
   }
 }
 
@@ -81,7 +85,6 @@ void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells,
   std::vector<Particle> &particles, double *F) {
   // A - target
   // B - source
-  #pragma omp for
   for (size_t p1 = 0; p1 < cells[A].nleaf; p1++) {
     double F_p[3] = {0.0};
     size_t l1 = cells[A].leaf[p1];
@@ -91,7 +94,7 @@ void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells,
       	double dx = particles[l1].r[0] - particles[l2].r[0];
       	double dy = particles[l1].r[1] - particles[l2].r[1];
       	double dz = particles[l1].r[2] - particles[l2].r[2];
-      	P2P_noatomic(dx, dy, dz, particles[l2].mu[0], particles[l2].mu[1], particles[l2].mu[2], F_p);
+      	P2P(dx, dy, dz, particles[l2].mu[0], particles[l2].mu[1], particles[l2].mu[2], F_p);
       }
     }
     #pragma omp atomic
@@ -155,23 +158,23 @@ void interact_dehnen_lazy(const size_t A, const size_t B,
   const double R = sqrt(dx*dx + dy*dy + dz*dz);
 
   if (R*theta > (cells[A].rmax + cells[B].rmax)) {
-    if (cells[A].nleaf < ncrit && cells[B].nleaf < ncrit) {
+    //if (cells[A].nleaf < ncrit && cells[B].nleaf < ncrit) {
       std::pair<size_t, size_t> m2l_pair = std::make_pair(B, A);
       M2L_list.push_back(m2l_pair);
-    }
+    //}
   }
 
   else if (cells[A].nchild == 0 && cells[B].nchild == 0) {
-    if (cells[B].nleaf >= ncrit && cells[A].nleaf > 0) {
+    if (cells[B].nleaf >= ncrit) {
       std::pair<size_t, size_t> m2l_pair = std::make_pair(B, A);
       M2L_list.push_back(m2l_pair);
       M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
     }
     else {
-      if (cells[A].nleaf < ncrit and cells[B].nleaf < ncrit) {
+      //if (cells[A].nleaf < ncrit and cells[B].nleaf < ncrit) {
     	std::pair<size_t, size_t> p2p_pair = std::make_pair(A, B);
     	P2P_list.push_back(p2p_pair);
-      }
+      //}
     }
   }
 
@@ -269,7 +272,7 @@ void evaluate_direct(std::vector<Particle> &particles, std::vector<double> &F, s
         	double mux = particles[j].mu[0];
         	double muy = particles[j].mu[1];
         	double muz = particles[j].mu[2];
-        	P2P_noatomic(dx, dy, dz, mux, muy, muz, &F[3*i]);
+        	P2P(dx, dy, dz, mux, muy, muz, &F[3*i]);
         }
       }
   }

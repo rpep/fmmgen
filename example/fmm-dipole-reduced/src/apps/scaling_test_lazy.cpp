@@ -81,9 +81,18 @@ int main(int argc, char **argv) {
     auto root = Cell(0.0, 0.0, 0.0, 1.0, 0, order, 0, ncrit);
     auto cells = build_tree(particles, root, ncrit, order);
     std::cout << "Tree built with " << cells.size() << " cells.\n\n\n" << std::endl;
+    int nleaf = 0;
+    for(int i = 0; i < cells.size(); i++) {
+        if (cells[i].nleaf < ncrit) {
+            nleaf += 1;
+        }
+    }
+    std::cout << "Tree has nleaf = " << nleaf << std::endl;
+
     std::vector<std::pair<size_t, size_t>> M2L_list;
     std::vector<std::pair<size_t, size_t>> P2P_list;
     interact_dehnen_lazy(0, 0, cells, particles, theta, order, ncrit, M2L_list, P2P_list);
+
     std::sort(M2L_list.begin(), M2L_list.end(),
            [](std::pair<size_t, size_t> &left, std::pair<size_t, size_t> &right) {
                 return left.first < right.first;
@@ -105,24 +114,19 @@ int main(int argc, char **argv) {
     }
 
     Timer timer2;
+    #pragma omp parallel
+    evaluate_P2M(particles, cells, 0, ncrit, order);
 
+    evaluate_M2M(particles, cells, order);
+    #pragma omp barrier
     #pragma omp parallel
     {
-        evaluate_P2M(particles, cells, 0, ncrit, order);
-        #pragma omp barrier
-        evaluate_M2M(particles, cells, order);
-        #pragma omp barrier
-        evaluate_M2L_lazy(cells,M2L_list,order);
-        #pragma omp barrier
-        std::cout << "Done M2L" << std::endl;
-        evaluate_P2P_lazy(cells, particles,P2P_list, F_approx);
-        std::cout << "Done P2P" << std::endl;
-        #pragma omp barrier
-        evaluate_L2L(cells, order);
-        std::cout << "Done L2L" << std::endl;
-        #pragma omp barrier
-        evaluate_L2P(particles, cells, F_approx.data(), ncrit, order);
-        std::cout << "Done L2P" << std::endl;
+      evaluate_M2L_lazy(cells,M2L_list,order);
+      evaluate_P2P_lazy(cells, particles,P2P_list, F_approx);
+      #pragma omp barrier
+      evaluate_L2L(cells, order);
+      #pragma omp barrier
+      evaluate_L2P(particles, cells, F_approx.data(), ncrit, order);
     }
 
     double t2 = timer2.elapsed();
