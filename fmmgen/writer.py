@@ -288,7 +288,10 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
     f.write(body)
     f.close()
 
-    if generate_cython_wrapper:
+    if generate_cython_wrapper and gpu:
+        raise Warning("Cannot write a Cython wrapper for GPU code; skipping")
+
+    elif generate_cython_wrapper:
         logger.info(f"Generating Cython wrapper: {name}_wrap.pyx")
         library = f"{name}"
 
