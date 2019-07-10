@@ -169,7 +169,15 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
     symbols = (x, y, z)
     coords = [x, y, z]
 
-    for i in range(source_order, order):
+
+    start = source_order
+    if field and not potential:
+        # No point starting at source_order
+        # because no field calculation can be done
+        # at this multipole order.
+        start += 1
+    
+    for i in range(start, order):
         logger.info(f"Generating order {i} operators")
         M_dict, _ = generate_mappings(i, symbols,'grevlex',  source_order=source_order)
         L_dict, _ = generate_mappings(i - source_order, symbols, 'grevlex', source_order=0)

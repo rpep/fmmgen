@@ -135,7 +135,10 @@ int main(int argc, char **argv) {
     double Eyrel_err = 0;
     double Ezrel_err = 0;
 
-    std::string filename = "error_order_" + std::to_string(order) + ".txt";
+    std::string filename = "errors_lazy_p_" + std::to_string(order) +
+                           "_n_" + std::to_string(Nparticles) +
+                           "_ncrit_" + std::to_string(ncrit) +
+                           "_theta_" + std::to_string(theta) + ".txt";
     std::ofstream fout(filename);
     for (size_t i = 0; i < particles.size(); i++) {
       double exerr =
