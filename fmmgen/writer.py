@@ -102,7 +102,11 @@ class FunctionPrinter:
 
         combined_inputs = ', '.join([str(x) + ' ' + str(y) for x, y in
                                      zip(types, inputs)])
-        return "void {}({})".format(name, combined_inputs)
+
+        if gpu:
+            return "__device__ void {}({})".format(name, combined_inputs)
+        else:
+            return "void {}({})".format(name, combined_inputs)
 
     def generate(self, name, LHS, RHS, inputs, operator='=', atomic=False):
         header = self._generate_header(name, LHS, RHS, inputs)
@@ -114,7 +118,7 @@ class FunctionPrinter:
         return header, code
 
 
-def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True, source_order=0, atomic=False):
+def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True, source_order=0, atomic=False, gpu=False):
     """
     Inputs:
 
