@@ -298,3 +298,30 @@ def generate_L2P_operators(order, symbols, L_dict, potential=True, field=True):
         terms.append(Fy)
         terms.append(Fz)
     return terms
+
+def generate_P2P_operators(order, symbols, M_dict,
+                           potential=True, field=True, source_order=0):
+    """
+    generate_M2L_operators(order, symbols, index_dict)
+
+    Generates P2P operator for a given source order
+    """
+    x, y, z = symbols
+    R = (x**2 + y**2 + z**2)**0.5
+
+    terms = []
+
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order).subs('R', R)
+
+    if potential:
+        terms.append(V)
+
+    if field:
+        Fx = -sp.diff(V, x)
+        Fy = -sp.diff(V, y)
+        Fz = -sp.diff(V, z)
+        terms.append(Fx)
+        terms.append(Fy)
+        terms.append(Fz)
+
+    return terms

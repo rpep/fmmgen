@@ -20,7 +20,8 @@ from fmmgen.generator import generate_mappings, generate_M_operators, \
                   generate_M_shift_operators, generate_L_operators, \
                   generate_L_shift_operators, \
                   generate_L2P_operators, \
-                  generate_M2P_operators
+                  generate_M2P_operators, \
+                  generate_P2P_operators
 
 
 logger = logging.getLogger(name="fmmgen")
@@ -172,11 +173,13 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         # because no field calculation can be done
         # at this multipole order.
         start += 1
-    
+
     for i in range(start, order):
         logger.info(f"Generating order {i} operators")
         M_dict, _ = generate_mappings(i, symbols,'grevlex',  source_order=source_order)
         L_dict, _ = generate_mappings(i - source_order, symbols, 'grevlex', source_order=0)
+
+
 
         M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
 
@@ -243,6 +246,22 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
                                 operator="+=", atomic=atomic)
         header += head
         body += code + '\n'
+
+        if i == start:
+            P2P = sp.Matrix(generate_P2P_operators(i, symbols, M_dict,
+                                                   potential=potential,
+                                                   field=field,
+                                                   source_order=source_order))
+            head, code = p.generate(f'P2P', 'F', P2P,
+                                    list(symbols) + \
+                                    [sp.MatrixSymbol('S', Nterms(i), 1)],
+                                    operator="+=", atomic=atomic
+                                    )
+            header += head
+            body += code + '\n'
+
+
+
 
 
     print("Here!")
