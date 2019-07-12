@@ -250,10 +250,10 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
     unique_funcs = []
     func_definitions = header.split(';\n')
     for func in func_definitions:
-        if f'_{source_order}' in func:
+        if f'_{start}' in func:
             unique_funcs.append(func)
 
-    wrapper_funcs = [f.replace(')', ', int order)').replace(f'_{source_order}', '')
+    wrapper_funcs = [f.replace(')', ', int order)').replace(f'_{start}', '')
                      for f in unique_funcs]
 
     print(wrapper_funcs)
@@ -267,10 +267,10 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         # Create a switch statement that covers all functions:
         code = wfunc + " {\n"
         code += 'switch (order) {\n'
-        for i in range(source_order, order):
+        for i in range(start, order):
             code += '  case {}:\n'.format(i)
             print(func)
-            replaced_code = func.replace(f'_{source_order}', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
+            replaced_code = func.replace(f'_{start}', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
             code += '    ' + replaced_code + ';\n    break;\n'
         code += "  }\n}\n"
         print(code)
