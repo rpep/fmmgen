@@ -1,7 +1,7 @@
 import sympy as sp
 from .expansions import M, M_shift, L, L_shift, phi_deriv
 from sympy.polys.orderings import monomial_key
-from .utils import itermonomials, generate_mappings
+from .utils import itermonomials, generate_mappings, Nterms
 from sympy.polys.monomials import itermonomials as sp_itermonomials
 
 def itermonomials(symbols, max_degree, min_degree=0):
@@ -294,6 +294,41 @@ def generate_L2P_operators(order, symbols, L_dict, potential=True, field=True):
         Fx = -phi_deriv(order, symbols, L_dict, deriv=(1, 0, 0))
         Fy = -phi_deriv(order, symbols, L_dict, deriv=(0, 1, 0))
         Fz = -phi_deriv(order, symbols, L_dict, deriv=(0, 0, 1))
+        terms.append(Fx)
+        terms.append(Fy)
+        terms.append(Fz)
+    return terms
+
+def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_order=0):
+    order = source_order
+    M_dict, _ = generate_mappings(source_order, symbols, 'grevlex',
+                                  source_order=source_order)
+    x, y, z = sp.symbols('x y z')
+    R = (x**2 + y**2 + z**2) ** 0.5
+
+    S_map, _ = generate_mappings(source_order, [x, y, z], key='grevlex',
+                                 source_order=source_order)
+    print('S_map = {}'.format(S_map))
+
+    M = sp.MatrixSymbol('M', Nterms(order), 1)
+    S = sp.MatrixSymbol('S', Nterms(order), 1)
+
+    subsdict = {M[i]: 0 for i in range(Nterms(order))}
+
+    for key in S_map.keys():
+        subsdict[M[M_dict[key]]] = S[M_dict[key]]
+
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order).subs('R', R).subs(subsdict)
+
+    terms = []
+    # Note: R must be substituted late for correct derivatives!
+    if potential:
+        terms.append(V.subs(R, 'R'))
+
+    if field:
+        Fx = -sp.diff(V, x).subs(R, 'R')
+        Fy = -sp.diff(V, y).subs(R, 'R')
+        Fz = -sp.diff(V, z).subs(R, 'R')
         terms.append(Fx)
         terms.append(Fy)
         terms.append(Fz)

@@ -65,14 +65,12 @@ def M_shift(n, order, symbols, index_dict, source_order=0):
 
     return result
 
-
 def M_dipole(n, symbols, M_dict):
     x, y, z = symbols
     mux, muy, muz = sp.symbols('mux muy muz')
     order = max(sum(i) for i in M_dict)
     term = M_shift(n, order, symbols, M_dict, source_order=1)
     M = sp.MatrixSymbol('M', Nterms(order), 1)
-    Z = sp.ZeroMatrix(Nterms(order), 1)
     term = term.subs({M[M_dict[(1,0,0)]]: mux,
                          M[M_dict[(0,1,0)]]: muy,
                          M[M_dict[(0,0,1)]]: muz,

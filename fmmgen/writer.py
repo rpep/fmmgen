@@ -9,10 +9,10 @@ import os
 import subprocess
 import sympy as sp
 import logging
-from sympy.printing.ccode import C99CodePrinter
 from sympy.printing.fcode import FCodePrinter
 from sympy.printing.cxxcode import CXX17CodePrinter
 from sympy.printing.llvmjitcode import LLVMJitPrinter
+from fmmgen.printers import C99CodePrinter
 from fmmgen.utils import Nterms
 import textwrap
 from fmmgen.cse import cse
@@ -20,7 +20,8 @@ from fmmgen.generator import generate_mappings, generate_M_operators, \
                   generate_M_shift_operators, generate_L_operators, \
                   generate_L_shift_operators, \
                   generate_L2P_operators, \
-                  generate_M2P_operators
+                  generate_M2P_operators, \
+                  generate_P2P_operators
 
 
 logger = logging.getLogger(name="fmmgen")
@@ -36,9 +37,14 @@ language_mapping = {'c': C99CodePrinter,
                     }
 
 
+
 class FunctionPrinter:
-    def __init__(self, language='c', precision='double', debug=True):
+    def __init__(self, language='c', precision='double', debug=True, gpu=False, minpow=False):
         logger.info(f"Function Printer created with precision \"{precision}\"")
+
+        self.gpu = gpu
+        if self.gpu:
+            logger.info(f"Writing CUDA __device__ functions is enabled")
 
         if not debug:
             logger.info(f"CSE is enabled")
@@ -46,7 +52,11 @@ class FunctionPrinter:
             logger.info(f"CSE is disabled")
         self.debug = debug
         try:
-            self.printer = language_mapping[language]()
+            if language=='c' and minpow:
+                self.printer = language_mapping[language](minpow=minpow)
+            else:
+                self.printer = language_mapping[language]()
+
         except KeyError:
             raise ValueError("Language not supported")
 
@@ -102,7 +112,11 @@ class FunctionPrinter:
 
         combined_inputs = ', '.join([str(x) + ' ' + str(y) for x, y in
                                      zip(types, inputs)])
-        return "void {}({})".format(name, combined_inputs)
+
+        if self.gpu:
+            return "__device__ void {}({})".format(name, combined_inputs)
+        else:
+            return "void {}({})".format(name, combined_inputs)
 
     def generate(self, name, LHS, RHS, inputs, operator='=', atomic=False):
         header = self._generate_header(name, LHS, RHS, inputs)
@@ -114,7 +128,13 @@ class FunctionPrinter:
         return header, code
 
 
-def generate_code(order, name, precision='double', generate_cython_wrapper=False, CSE=False, harmonic_derivs=False, include_dir=None, src_dir=None, potential=True, field=True, source_order=0, atomic=False):
+def generate_code(order, name, precision='double',
+                  cython_wrapper=False,
+                  CSE=False, harmonic_derivs=False,
+                  include_dir=None, src_dir=None,
+                  potential=True, field=True,
+                  source_order=0, atomic=False,
+                  gpu=False, minpow=0):
     """
     Inputs:
 
@@ -130,7 +150,7 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         and this is therefore the name of the Python module which must be
         imported if using pyximport.
 
-    generate_cython_wrapper, bool:
+    cython_wrapper, bool:
         Enable generation of a Cython wrapper for the C files.
 
     CSE, bool:
@@ -147,16 +167,23 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         in the local expansion, and hence they are not used. This is useful if,
         for example, we only have pure dipoles or quadrupoles in the system.
 
+    minpow, int:
+        If minpow is set, pow(x, n) expressions are expanded such that
+        if n < minpow, the expression in code is printed as multiplications.
+
+        e.g. if a sympy expression is pow(x, 2) + pow(y, 6) and minpow is 5,
+        the printed version will be x*x + pow(y, 6)
+
     """
     logger.info(f"Generating FMM operators to order {order}")
     assert precision in ['double', 'float'], "Precision must be float or double"
     logger.info(f"Precision = {precision}")
     if CSE:
         logger.info(f"CSE Enabled")
-        p = FunctionPrinter(precision=precision, debug=False)
+        p = FunctionPrinter(precision=precision, debug=False, minpow=minpow)
     else:
         logger.info(f"CSE Disabled")
-        p = FunctionPrinter(precision=precision, debug=True)
+        p = FunctionPrinter(precision=precision, debug=True, minpow=minpow)
 
     header = ""
     body = ""
@@ -172,11 +199,13 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         # because no field calculation can be done
         # at this multipole order.
         start += 1
-    
+
     for i in range(start, order):
         logger.info(f"Generating order {i} operators")
         M_dict, _ = generate_mappings(i, symbols,'grevlex',  source_order=source_order)
         L_dict, _ = generate_mappings(i - source_order, symbols, 'grevlex', source_order=0)
+
+
 
         M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
 
@@ -244,11 +273,25 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
         header += head
         body += code + '\n'
 
+        if i == start:
+            P2P = sp.Matrix(generate_P2P_operators(symbols, M_dict,
+                                                   potential=potential,
+                                                   field=field,
+                                                   source_order=source_order))
+
+            head, code = p.generate(f'P2P', 'F', P2P,
+                                    list(symbols) + \
+                                    [sp.MatrixSymbol('S', Nterms(i), 1)],
+                                    operator="+=", atomic=atomic
+                                    )
+            header += head
+            body += code + '\n'
 
     print("Here!")
     # We now generate wrapper functions that cover all orders generated.
     unique_funcs = []
     func_definitions = header.split(';\n')
+    print(f"func_defs = {func_definitions}")
     for func in func_definitions:
         if f'_{start}' in func:
             unique_funcs.append(func)
@@ -292,7 +335,10 @@ def generate_code(order, name, precision='double', generate_cython_wrapper=False
     f.write(body)
     f.close()
 
-    if generate_cython_wrapper:
+    if cython_wrapper and gpu:
+        raise Warning("Cannot write a Cython wrapper for GPU code; skipping")
+
+    elif cython_wrapper:
         logger.info(f"Generating Cython wrapper: {name}_wrap.pyx")
         library = f"{name}"
 
