@@ -163,14 +163,14 @@ def L_shift(n, order, symbols, L_dict, source_order=0):
     # rather than using index_dict, because otherwise we miss terms!
     monoms, _ = generate_mappings(modk_max, symbols, key='grevlex', source_order=0)
 
-    print(monoms.keys())
+    # print(monoms.keys())
 
-    print(f"L_shift({n}), order = {order}, source_order={source_order}")
+    # print(f"L_shift({n}), order = {order}, source_order={source_order}")
     result = sp.Integer(0)
 
     for k in monoms.keys():
         npk = n[0] + k[0], n[1] + k[1], n[2] + k[2]
-        print(f"  k = {k}, npk = {npk}")
+        # print(f"  k = {k}, npk = {npk}")
 
         if npk[0] >= 0 and npk[1] >= 0 and npk[2] >= 0 and sum(npk) <= order-source_order:
             L = sp.MatrixSymbol('L', Nterms(order), 1)[L_dict[npk]]
