@@ -13,10 +13,10 @@ all: generate library scaling
 
 
 generate:
-#	python3 example.py
+	python3 example.py
 
 library:
-	# ${CXX} -c ${CXXFLAGS} -fpic src/operators.c   -o build/operators.o
+	${CXX} -c ${CXXFLAGS} -fpic src/operators.c   -o build/operators.o
 	${CXX} -c ${CXXFLAGS} -fpic src/calculate.cpp -o build/calculate.o
 	${CXX} -c ${CXXFLAGS} -fpic src/tree.cpp      -o build/tree.o
 	${CXX} -c ${CXXFLAGS} -fpic src/utils.cpp     -o build/utils.o

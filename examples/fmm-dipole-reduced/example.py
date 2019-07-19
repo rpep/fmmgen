@@ -8,7 +8,7 @@ precision='double'
 fmmgen.generate_code(order, "operators",
                      precision=precision,
                      CSE=cse,
-                     generate_cython_wrapper=False,
+                     cython_wrapper=False,
                      potential=False,
                      field=True,
                      include_dir="include",
