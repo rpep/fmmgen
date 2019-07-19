@@ -1,4 +1,4 @@
-CXX=g++-8
+CXX=g++-9
 CXXFLAGS=-Iinclude/ -fopenmp -Wall
 
 LIBNAME=fmm
@@ -13,7 +13,7 @@ all: generate library scaling
 
 
 generate:
-#	python3 example.py
+	python3 example.py
 
 library:
 	${CXX} -c ${CXXFLAGS} -fpic src/operators.c   -o build/operators.o

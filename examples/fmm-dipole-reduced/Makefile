@@ -1,4 +1,4 @@
-CXX=icpc
+CXX=g++-9
 #CXXFLAGS=-Iinclude/ -fopenmp -Wall -fsanitize=address -fsanitize=undefined -fsanitize=leak -fno-omit-frame-pointer -fsignaling-nans -g
 CXXFLAGS=-Iinclude/ -fopenmp -Wall -O2 -std=c++14 -march=native
 

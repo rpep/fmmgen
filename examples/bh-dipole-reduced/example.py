@@ -1,6 +1,7 @@
 import fmmgen
-order = 4
+
+order = 5
 cse = True
 
-fmmgen.generate_code(order, "operators", CSE=cse, generate_cython_wrapper=False,
-                     include_dir="include", src_dir="src", potential=False, field=True, source_order=1)
+fmmgen.generate_code(order, "operators", CSE=cse, cython_wrapper=False,
+                     include_dir="include", src_dir="src", source_order=1)

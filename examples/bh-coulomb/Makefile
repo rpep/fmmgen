@@ -1,4 +1,4 @@
-CXX=g++-8
+CXX=g++-9
 CXXFLAGS=-Iinclude/ -fopenmp -Wall
 
 LIBNAME=bh
@@ -27,7 +27,6 @@ library:
 
 scaling: library
 	${CXX} -Wl,-rpath,. -L. ${CXXFLAGS} src/apps/scaling_test.cpp -o scaling -lbh
-
 
 
 clean:
