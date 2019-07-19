@@ -308,7 +308,7 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
 
     S_map, _ = generate_mappings(source_order, [x, y, z], key='grevlex',
                                  source_order=source_order)
-    print('S_map = {}'.format(S_map))
+    # print('S_map = {}'.format(S_map))
 
     M = sp.MatrixSymbol('M', Nterms(order), 1)
     S = sp.MatrixSymbol('S', Nterms(order), 1)

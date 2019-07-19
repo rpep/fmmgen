@@ -88,7 +88,7 @@ class FunctionPrinter:
             tmp = self.printer.doprint(RHS, assign_to=LHS).replace('=',
                                                                      operator)
         if atomic:
-            print(tmp)
+            # print(tmp)
             lines = tmp.split('\n')
             for l in lines:
                 code += '#pragma omp atomic\n'
@@ -287,14 +287,23 @@ def generate_code(order, name, precision='double',
             header += head
             body += code + '\n'
 
-    print("Here!")
+    # print("Here!")
     # We now generate wrapper functions that cover all orders generated.
     unique_funcs = []
     func_definitions = header.split(';\n')
-    print(f"func_defs = {func_definitions}")
+    # print(f"func_defs = {func_definitions}")
     for func in func_definitions:
-        if f'_{start}' in func:
+        # Must do it this way in order to avoid breaking
+        # for expansions > 10.
+        function_name = func.split('(')[0]
+        print(f"Function_name = {function_name}")
+        end_string = f'_{start}'
+        if end_string == function_name[-len(end_string):]:
+            print("Unique!")
             unique_funcs.append(func)
+        else:
+            print(f"{func} not unique")
+            print(f"  {end_string}  {function_name[-len(end_string)-1:]}")
 
     wrapper_funcs = [f.replace(')', ', int order)').replace(f'_{start}', '')
                      for f in unique_funcs]
@@ -314,9 +323,10 @@ def generate_code(order, name, precision='double',
             code += '  case {}:\n'.format(i)
             print(func)
             replaced_code = func.replace(f'_{start}', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
+            print(f"replaced_code: {replaced_code}")
             code += '    ' + replaced_code + ';\n    break;\n'
         code += "  }\n}\n"
-        print(code)
+        # print(code)
         body += code
 
     if not include_dir:
@@ -364,7 +374,7 @@ def generate_code(order, name, precision='double',
 
         # Generate the actual wrapper code
         for funcname in func_definitions:
-            print(funcname)
+            # print(funcname)
             if not funcname:
                 continue
             pyfuncname = funcname
@@ -390,7 +400,7 @@ def generate_code(order, name, precision='double',
 
         f = open(f"{name}_wrap.pyxbld", "w")
 
-        print(library)
+        # print(library)
 
         logger.info(f"Generating Cython buildfile: {name}_wrap.pyxbld")
         bldcode = textwrap.dedent("""\
