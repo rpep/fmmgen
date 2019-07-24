@@ -1,5 +1,7 @@
 CXX=g++-8
 CXXFLAGS=-Iinclude/ -fopenmp -Wall -fsanitize=address -fsanitize=undefined -fsanitize=leak -fno-omit-frame-pointer -fsignaling-nans
+CXXFLAGS=-Iinclude/ -fopenmp -Wall -O2 -std=c++14 -march=native
+
 
 LIBNAME=fmm
 
@@ -9,7 +11,7 @@ SRC = src/operators.c   \
       src/utils.cpp
 
 
-all: generate library scaling
+all: generate library scaling lazy
 
 
 generate:
@@ -28,6 +30,9 @@ library:
 
 scaling: library
 	${CXX} -Wl,-rpath,. -L. ${CXXFLAGS} src/apps/scaling_test.cpp -o scaling -lfmm
+
+lazy: library
+	${CXX} -Wl,-rpath,. -L. ${CXXFLAGS} src/apps/scaling_test_lazy.cpp -o lazy -lfmm
 
 clean:
 	rm -rf build/*

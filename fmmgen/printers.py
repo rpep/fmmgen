@@ -9,6 +9,10 @@ class C99CodePrinter(C99Base):
         if self.minpow:
             if expr.exp.is_integer and expr.exp > 0 and expr.exp <= self.minpow:
                 return '(' + '*'.join([self._print(expr.base) for i in range(expr.exp)]) + ')'
+
+            elif expr.exp.is_integer and expr.exp < 0 and expr.exp >= -self.minpow:
+                expr = '(1 / (' + '*'.join([self._print(expr.base) for i in range(abs(expr.exp))]) + '))'
+                return expr
             else:
                 return super()._print_Pow(expr)
         else:

@@ -1,4 +1,4 @@
-CXX=g++-8
+CXX=g++-9
 CXXFLAGS=-Iinclude/ -fopenmp -Wall -fsanitize=address -fsanitize=undefined -fsanitize=leak -fno-omit-frame-pointer -fsignaling-nans
 
 LIBNAME=fmm

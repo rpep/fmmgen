@@ -1,10 +1,11 @@
 import fmmgen
 
-order = 10
+order = 7
 source_order = 1
 cse = True
 atomic = True
 precision='double'
+
 fmmgen.generate_code(order, "operators",
                      precision=precision,
                      CSE=cse,
@@ -14,4 +15,4 @@ fmmgen.generate_code(order, "operators",
                      include_dir="include",
                      src_dir="src",
                      source_order=source_order,
-                     atomic=atomic)
+                     atomic=atomic, minpow=4)

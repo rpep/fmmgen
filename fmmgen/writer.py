@@ -227,7 +227,8 @@ def generate_code(order, name, precision='double',
         header += head
         body += code + '\n'
 
-        L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict, source_order=source_order))
+        L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict,
+                      source_order=source_order, harmonic_derivs=harmonic_derivs))
 
         # print(f"L = {L}")
 
@@ -264,7 +265,7 @@ def generate_code(order, name, precision='double',
 
         M2P = generate_M2P_operators(i, symbols, M_dict,
                                      potential=potential,
-                                     field=field, source_order=source_order)
+                                     field=field, source_order=source_order, harmonic_derivs=harmonic_derivs)
         Fs = sp.Matrix(M2P)
         head, code = p.generate(f'M2P_{i}', 'F', Fs,
                                 list(symbols) + \

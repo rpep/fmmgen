@@ -148,7 +148,7 @@ def generate_M_shift_operators(order, symbols, M_dict, source_order=0):
     return M_operators
 
 
-def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0):
+def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0, harmonic_derivs=False):
     """
     generate_L_operators(order, symbols, index_dict):
 
@@ -184,7 +184,7 @@ def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0):
     x, y, z = symbols
     L_operators = []
     for n in L_dict.keys():
-        L_operators.append(L(n, order, symbols, M_dict, source_order=source_order))
+        L_operators.append(L(n, order, symbols, M_dict, source_order=source_order, harmonic_derivs=harmonic_derivs))
     return L_operators
 
 
@@ -226,7 +226,8 @@ def generate_L_shift_operators(order, symbols, L_dict, source_order=0):
 
 
 def generate_M2P_operators(order, symbols, M_dict,
-                           potential=True, field=True, source_order=0):
+                           potential=True, field=True, source_order=0,
+                           harmonic_derivs=False):
     """
     generate_M2L_operators(order, symbols, index_dict)
 
@@ -238,7 +239,7 @@ def generate_M2P_operators(order, symbols, M_dict,
 
     terms = []
 
-    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order).subs('R', R)
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, harmonic_derivs=harmonic_derivs).subs('R', R)
     if potential:
         terms.append(V)
 

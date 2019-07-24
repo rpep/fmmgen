@@ -94,7 +94,7 @@ def M_dipole(n, symbols, M_dict):
 
 
 @functools.lru_cache(maxsize=None)
-def Phi_derivatives(n, symbols):
+def Phi_derivatives(n, symbols, harmonic=False):
     """
     Phi_derivatives(n, symbols)
 
@@ -115,15 +115,20 @@ def Phi_derivatives(n, symbols):
     >>> Phi_derivatives((1, 0, 0), (x, y, z))
     -1.0*x/R**3
     """
-    dx, dy, dz = symbols
-    R = (dx**2 + dy**2 + dz**2)**(0.5)
-    phi = 1/R
-    deriv = sp.diff(phi, dx, n[0], dy, n[1], dz, n[2])
-    deriv = deriv.subs(R, 'R')
-    return deriv
+    if not harmonic or n[2] < 2:
+        dx, dy, dz = symbols
+        R = (dx**2 + dy**2 + dz**2)**(0.5)
+        phi = 1/R
+        deriv = sp.diff(phi, dx, n[0], dy, n[1], dz, n[2])
+        deriv = deriv.subs(R, 'R')
+        return deriv
+    else:
+        k = (n[0], n[1], n[2] - 2)
+        k1 = (k[0] + 2, k[1], k[2])
+        k2 = (k[0], k[1] + 2, k[2])
+        return -(Phi_derivatives(k1, symbols, harmonic=harmonic)) - (Phi_derivatives(k2, symbols, harmonic=harmonic))
 
-
-def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
+def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0, harmonic_derivs=False):
     assert order >= source_order, "order must be >= source_order"
 
     #print(sum(n), order - source_order)
@@ -148,7 +153,7 @@ def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
         if npm[0] >= 0 and npm[1] >= 0 and npm[2] >= 0 and sum(m) >= source_order:
             M = sp.MatrixSymbol('M', Nterms(order), 1)[M_dict[m]]
             if eval_derivs:
-                result += M*Phi_derivatives(npm, symbols)
+                result += M*Phi_derivatives(npm, symbols, harmonic=harmonic_derivs)
             else:
                 result += M*D[M_dict[npm]]
     return result
