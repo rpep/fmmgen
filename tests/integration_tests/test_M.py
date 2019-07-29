@@ -1,6 +1,8 @@
 import fmmgen
 import numpy as np
 from fmmgen.utils import Nterms
+import pyximport
+pyximport.install()
 
 def test_M2M_operator_0():
     source_order = 0
@@ -9,7 +11,7 @@ def test_M2M_operator_0():
     atomic = True
     precision='double'
     
-    fmmgen.generate_code(order, "operators",
+    fmmgen.generate_code(order, "testM2M0",
                          precision=precision,
                          CSE=cse,
                          cython_wrapper=True,
@@ -20,9 +22,7 @@ def test_M2M_operator_0():
                          harmonic_derivs=True,
                          language='c')
 
-    import pyximport
-    pyximport.install()
-    import operators_wrap as fmm
+    import testM2M0_wrap as fmm
     # Locate source S at x1
     # Compute multipoles at z1
     # Compute multipoles using shift at z2 from those at z1
@@ -63,7 +63,7 @@ def test_M2M_operator_1():
     atomic = True
     precision='double'
 
-    fmmgen.generate_code(order, "operators",
+    fmmgen.generate_code(order, "test_M2M1",
                          precision=precision,
                          CSE=cse,
                          cython_wrapper=True,
@@ -74,9 +74,7 @@ def test_M2M_operator_1():
                          harmonic_derivs=True,
                          language='c')
 
-    import pyximport
-    pyximport.install()
-    import operators_wrap as fmm
+    import testM2M1_wrap as fmm
     # Locate source S at x1
     # Compute multipoles at z1
     # Compute multipoles using shift at z2

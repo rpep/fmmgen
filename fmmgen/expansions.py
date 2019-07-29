@@ -141,7 +141,7 @@ def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0, harmonic_deri
     dx, dy, dz = symbols
     modn = sum(n)
     modm_max = order - modn
-    print(f'n = {n}')
+    # print(f'n = {n}')
 
     monoms, _ = generate_mappings(modm_max, symbols, key='grevlex', source_order=0)
     #print(monoms)

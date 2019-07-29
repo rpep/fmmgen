@@ -6,7 +6,7 @@ import pyximport
 pyximport.install()
 
 
-def test_M2M_operator_0():
+def test_P2P_operator_0():
     source_order = 0
     order = source_order + 1
     cse = True
@@ -39,6 +39,7 @@ def test_M2M_operator_0():
 
     dx = x2 - x1
     R = np.linalg.norm(dx)
+    
     F_python = np.array([S[0] / R, S[0]/R**3, S[0]/R**3, S[0]/R**3])
     
     fmm.P2P(*dx, S, F_c)
@@ -46,7 +47,7 @@ def test_M2M_operator_0():
 
 
 
-def test_M2M_operator_1():
+def test_P2P_operator_1():
     source_order = 1
     order = source_order + 1
     cse = True
@@ -72,16 +73,18 @@ def test_M2M_operator_1():
     x2 = np.array([4.0, 4.0, 4.0])
 
     S = np.zeros(fmm.FMMGEN_SOURCESIZE)
-    print(S)
     F_python = np.zeros(fmm.FMMGEN_OUTPUTSIZE)
     F_c = np.zeros(fmm.FMMGEN_OUTPUTSIZE)
 
     S[:] = 1.0
+    print(S)
     dx = x2 - x1
     R = np.linalg.norm(dx)
-
-    F_python = np.array([S.dot(dx)/R**3, 0, 0, 0])
-    F_python[1:] = (3 * S.dot(dx) * dx - S) / R**5 
-    
     fmm.P2P(*dx, S, F_c)
+    
+    dx /= R
+    F_python = np.array([S.dot(dx)/R**2, 0, 0, 0])
+    F_python[1:] = (3 * S.dot(dx) * dx - S) / R**3 
+    
+
     np.testing.assert_equal(F_python, F_c)

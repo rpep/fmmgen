@@ -303,22 +303,23 @@ def generate_code(order, name, precision='double',
         # Must do it this way in order to avoid breaking
         # for expansions > 10.
         function_name = func.split('(')[0]
-        print(f"Function_name = {function_name}")
+        # print(f"Function_name = {function_name}")
         end_string = f'_{start}'
         if end_string == function_name[-len(end_string):]:
-            print("Unique!")
+            # print("Unique!")
             unique_funcs.append(func)
         else:
-            print(f"{func} not unique")
-            print(f"  {end_string}  {function_name[-len(end_string)-1:]}")
+            pass
+            # print(f"{func} not unique")
+            # print(f"  {end_string}  {function_name[-len(end_string)-1:]}")
 
     wrapper_funcs = [f.replace(')', ', int order)').replace(f'_{start}', '')
                      for f in unique_funcs]
 
-    print(wrapper_funcs)
+    #  print(wrapper_funcs)
 
     func_definitions += wrapper_funcs
-    print('\n'.join(func_definitions))
+    # print('\n'.join(func_definitions))
 
     for wfunc, func in zip(wrapper_funcs, unique_funcs):
         # Add to header file
@@ -328,9 +329,9 @@ def generate_code(order, name, precision='double',
         code += 'switch (order) {\n'
         for i in range(start, order):
             code += '  case {}:\n'.format(i)
-            print(func)
+            # print(func)
             replaced_code = func.replace(f'_{start}', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
-            print(f"replaced_code: {replaced_code}")
+            # print(f"replaced_code: {replaced_code}")
             code += '    ' + replaced_code + ';\n    break;\n'
         code += "  }\n}\n"
         # print(code)
@@ -402,7 +403,7 @@ def generate_code(order, name, precision='double',
         FMMGEN_SOURCEORDER = {}.FMMGEN_SOURCEORDER
         FMMGEN_SOURCESIZE = {}.FMMGEN_SOURCESIZE
         FMMGEN_OUTPUTSIZE = {}.FMMGEN_OUTPUTSIZE
-        """).format(*[name + '_decl']*5) 
+        """).format(*[name + '_decl']*6) 
 
         subsdict = {" *": "[:]",
                     "void": "cpdef",
