@@ -343,14 +343,15 @@ def generate_code(order, name, precision='double',
     f.write(f"#pragma once\n")
     f.write(f"#define FMMGEN_MINORDER {start}\n")
     f.write(f"#define FMMGEN_MAXORDER {order}\n")
-    f.write(f"#define FMMGEN_SOURCE_SIZE {Nterms(source_order) - Nterms(source_order - 1)}\n")
+    f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
+    f.write(f"#define FMMGEN_SOURCESIZE {Nterms(source_order) - Nterms(source_order - 1)}\n")
     if potential and not field:
         osize = 1
     elif field and not potential:
         osize = 3
     elif field and potential:
         osize = 4
-    f.write(f"#define FMMGEN_OUTPUT_SIZE {osize}\n")
+    f.write(f"#define FMMGEN_OUTPUTSIZE {osize}\n")
     f.write(header)
     f.close()
 
@@ -380,8 +381,9 @@ def generate_code(order, name, precision='double',
         cdef extern from "{}.h":
             cdef int FMMGEN_MINORDER
             cdef int FMMGEN_MAXORDER
-            cdef int FMMGEN_SOURCE_SIZE
-            cdef int FMMGEN_OUTPUT_SIZE
+            cdef int FMMGEN_SOURCEORDER
+            cdef int FMMGEN_SOURCESIZE
+            cdef int FMMGEN_OUTPUTSIZE
             {}
         """)
         f.write(pxdcode.format(name, '\n    '.join(func_definitions)))
@@ -397,8 +399,9 @@ def generate_code(order, name, precision='double',
 
         FMMGEN_MINORDER = {}.FMMGEN_MINORDER
         FMMGEN_MAXORDER = {}.FMMGEN_MAXORDER
-        FMMGEN_SOURCE_SIZE = {}.FMMGEN_SOURCE_SIZE
-        FMMGEN_OUTPUT_SIZE = {}.FMMGEN_OUTPUT_SIZE
+        FMMGEN_SOURCEORDER = {}.FMMGEN_SOURCEORDER
+        FMMGEN_SOURCESIZE = {}.FMMGEN_SOURCESIZE
+        FMMGEN_OUTPUTSIZE = {}.FMMGEN_OUTPUTSIZE
         """).format(*[name + '_decl']*5) 
 
         subsdict = {" *": "[:]",

@@ -19,7 +19,7 @@ def TriangleNumbers(n):
     """
     Returns the nth triangle number
     """
-    return int(n * (n + 1) / 2)
+    return int((n * (n + 1)) / 2)
 
 @functools.lru_cache(maxsize=None)
 def Nterms(p):

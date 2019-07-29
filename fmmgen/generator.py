@@ -241,12 +241,12 @@ def generate_M2P_operators(order, symbols, M_dict,
 
     V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, harmonic_derivs=harmonic_derivs).subs('R', R)
     if potential:
-        terms.append(V)
+        terms.append(V.subs(R, 'R'))
 
     if field:
-        Fx = -sp.diff(V, x)
-        Fy = -sp.diff(V, y)
-        Fz = -sp.diff(V, z)
+        Fx = -sp.diff(V, x).subs(R, 'R')
+        Fy = -sp.diff(V, y).subs(R, 'R')
+        Fz = -sp.diff(V, z).subs(R, 'R')
         terms.append(Fx)
         terms.append(Fy)
         terms.append(Fz)
