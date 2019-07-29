@@ -9,10 +9,8 @@ import os
 import subprocess
 import sympy as sp
 import logging
-from sympy.printing.fcode import FCodePrinter
-from sympy.printing.cxxcode import CXX17CodePrinter
-from sympy.printing.llvmjitcode import LLVMJitPrinter
-from fmmgen.printers import C99CodePrinter
+# from sympy.printing.fcode import FCodePrinter
+from fmmgen.printers import CCodePrinter, CXXCodePrinter
 from fmmgen.utils import Nterms
 import textwrap
 from fmmgen.cse import cse
@@ -30,10 +28,9 @@ logger = logging.getLogger(name="fmmgen")
 q, x, y, z, R = sp.symbols('q x y z R')
 symbols = (x, y, z)
 
-language_mapping = {'c': C99CodePrinter,
-                    'fortran': FCodePrinter,
-                    'cxx': CXX17CodePrinter,
-                    'llvm': LLVMJitPrinter
+language_mapping = {'c': CCodePrinter,
+#                   'fortran': FCodePrinter,
+                    'c++': CXXCodePrinter,
                     }
 
 
@@ -51,12 +48,12 @@ class FunctionPrinter:
         else:
             logger.info(f"CSE is disabled")
         self.debug = debug
+
         try:
-            if language=='c' and minpow:
+            if minpow:
                 self.printer = language_mapping[language](minpow=minpow)
             else:
                 self.printer = language_mapping[language]()
-
         except KeyError:
             raise ValueError("Language not supported")
 
@@ -88,7 +85,6 @@ class FunctionPrinter:
             tmp = self.printer.doprint(RHS, assign_to=LHS).replace('=',
                                                                      operator)
         if atomic:
-            # print(tmp)
             lines = tmp.split('\n')
             for l in lines:
                 code += '#pragma omp atomic\n'
@@ -134,7 +130,7 @@ def generate_code(order, name, precision='double',
                   include_dir=None, src_dir=None,
                   potential=True, field=True,
                   source_order=0, atomic=False,
-                  gpu=False, minpow=0):
+                  gpu=False, minpow=0, language='c'):
     """
     Inputs:
 
@@ -175,6 +171,15 @@ def generate_code(order, name, precision='double',
         the printed version will be x*x + pow(y, 6)
 
     """
+    assert language in ['c', 'c++'], "Language must be 'c' or 'c++'"
+    if language == 'c':
+        fext = 'c'
+        hext = 'h'
+    if language == 'c++':
+        fext = 'cpp'
+        hext = 'h'
+    
+    
     logger.info(f"Generating FMM operators to order {order}")
     assert precision in ['double', 'float'], "Precision must be float or double"
     logger.info(f"Precision = {precision}")
@@ -197,7 +202,8 @@ def generate_code(order, name, precision='double',
     if field and not potential:
         # No point starting at source_order
         # because no field calculation can be done
-        # at this multipole order.
+        # at this multipole order - the L2P derivative
+        # is 0.
         start += 1
 
     for i in range(start, order):
@@ -331,18 +337,34 @@ def generate_code(order, name, precision='double',
         body += code
 
     if not include_dir:
-        f = open(f"{name}.h", 'w')
+        f = open(f"{name}.{hext}", 'w')
     else:
-        f = open(f"{include_dir.rstrip('/')}/{name}.h", 'w')
+        f = open(f"{include_dir.rstrip('/')}/{name}.{hext}", 'w')
     f.write(f"#pragma once\n")
+    f.write(f"#define FMMGEN_MINORDER {start}\n")
+    f.write(f"#define FMMGEN_MAXORDER {order}\n")
+    f.write(f"#define FMMGEN_SOURCE_SIZE {Nterms(source_order) - Nterms(source_order - 1)}\n")
+    if potential and not field:
+        osize = 1
+    elif field and not potential:
+        osize = 3
+    elif field and potential:
+        osize = 4
+    f.write(f"#define FMMGEN_OUTPUT_SIZE {osize}\n")
     f.write(header)
     f.close()
 
     if not src_dir:
-        f = open(f"{name}.c", 'w')
+        f = open(f"{name}.{fext}", 'w')
     else:
-        f = open(f"{src_dir.rstrip('/')}/{name}.c", 'w')
-    f.write(f"#include \"{name}.h\"\n#include \"math.h\"\n")
+        f = open(f"{src_dir.rstrip('/')}/{name}.{fext}", 'w')
+
+    f.write(f'#include "{name}.{hext}"\n')
+    if language == 'c':
+        f.write(f'#include "math.h"\n')
+    elif language == 'c++':
+        f.write(f'#include<cmath>\n')
+    
     f.write(body)
     f.close()
 
@@ -356,9 +378,14 @@ def generate_code(order, name, precision='double',
         f = open(f"{name}_decl.pxd", "w")
         pxdcode = textwrap.dedent("""\
         cdef extern from "{}.h":
+            cdef int FMMGEN_MINORDER
+            cdef int FMMGEN_MAXORDER
+            cdef int FMMGEN_SOURCE_SIZE
+            cdef int FMMGEN_OUTPUT_SIZE
             {}
         """)
         f.write(pxdcode.format(name, '\n    '.join(func_definitions)))
+        
         f.close()
 
         f = open(f"{name}_wrap.pyx", "w")
@@ -367,7 +394,12 @@ def generate_code(order, name, precision='double',
         # cython: language_level=3
         cimport numpy as np
         cimport {}
-        """).format(name + '_decl')
+
+        FMMGEN_MINORDER = {}.FMMGEN_MINORDER
+        FMMGEN_MAXORDER = {}.FMMGEN_MAXORDER
+        FMMGEN_SOURCE_SIZE = {}.FMMGEN_SOURCE_SIZE
+        FMMGEN_OUTPUT_SIZE = {}.FMMGEN_OUTPUT_SIZE
+        """).format(*[name + '_decl']*5) 
 
         subsdict = {" *": "[:]",
                     "void": "cpdef",

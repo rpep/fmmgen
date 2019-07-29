@@ -23,8 +23,7 @@ def M(n, symbols, source_order=0):
     if source_order > 0:
         raise NotImplementedError("Not implemented!")
 
-    return q * (-1)**(n[0] + n[1] + n[2]) * dx**n[0] * dy**n[1] * dz**n[2] / \
-        (factorial(n[0]) * factorial(n[1]) * factorial(n[2]))
+    return q * (-1)**(n[0] + n[1] + n[2]) * dx**n[0] * dy**n[1] * dz**n[2]
 
 
 def M_shift(n, order, symbols, index_dict, source_order=0):
@@ -59,8 +58,8 @@ def M_shift(n, order, symbols, index_dict, source_order=0):
         if nmink[0] >= 0 and nmink[1] >= 0 and nmink[2] >= 0 and sum(nmink) >= source_order:
             array_index = index_dict[nmink]
             M = sp.MatrixSymbol('M', Nterms(order), 1)[array_index]
-            sum_term = M * x**k[0] * y**k[1] * z**k[2] / \
-                (factorial(k[0]) * factorial(k[1])*factorial(k[2]))
+            sum_term = M * x**k[0] * y**k[1] * z**k[2] #/ \
+#                (factorial(k[0]) * factorial(k[1])*factorial(k[2]))
             result += sum_term
 
     return result
@@ -151,7 +150,7 @@ def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0, harmonic_deri
         npm = n[0] + m[0], n[1] + m[1], n[2] + m[2]
         #print(f'  m = {m}, npm = {npm}')
         if npm[0] >= 0 and npm[1] >= 0 and npm[2] >= 0 and sum(m) >= source_order:
-            M = sp.MatrixSymbol('M', Nterms(order), 1)[M_dict[m]]
+            M = sp.MatrixSymbol('M', Nterms(order), 1)[M_dict[m]] / (factorial(m[0]) * factorial(m[1]) * factorial(m[2]))
             if eval_derivs:
                 result += M*Phi_derivatives(npm, symbols, harmonic=harmonic_derivs)
             else:
