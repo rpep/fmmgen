@@ -6,7 +6,7 @@
 #include "utils.hpp"
 
 
-/*! \brief Particle class used to store position and dipole moment strength. */
+/*! \brief Particle class used to store position and source strength. */
 class Particle {
 public:
   double *r; // Address of 3-vector position of the particle
@@ -97,7 +97,6 @@ private:
 void printTreeParticles(std::vector<Cell> &cells, size_t cell, size_t depth);
 
 void add_child(std::vector<Cell> &cells, int octant, size_t p, size_t ncrit, size_t order);
-
 
 void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles, size_t p, size_t ncrit, size_t order);
 

@@ -11,29 +11,25 @@ void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particl
   // A - target
   // B - source
   for (size_t p1 = 0; p1 < cells[A].nleaf; p1++) {
-    double F_p[FMMGEN_OUTPUTSIZE] = {0.0};
+    //double F_p[FMMGEN_OUTPUTSIZE] = {0.0};
     size_t l1 = cells[A].leaf[p1];
     for (size_t p2 = 0; p2 < cells[B].nleaf; p2++) {
       size_t l2 = cells[B].leaf[p2];
       if (l2 != l1) {
-      	double dx = particles[l1].r[0] - particles[l2].r[0];
-      	double dy = particles[l1].r[1] - particles[l2].r[1];
-      	double dz = particles[l1].r[2] - particles[l2].r[2];
-      	P2P(dx, dy, dz, particles[l2].S, F_p);
+      	double dx = (particles[l1].r[0] - particles[l2].r[0]);
+      	double dy = (particles[l1].r[1] - particles[l2].r[1]);
+      	double dz = (particles[l1].r[2] - particles[l2].r[2]);
+      	P2P(dx, dy, dz, particles[l2].S, &F[FMMGEN_OUTPUTSIZE*l1]);
       }
-    }
-    for(int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
-      #pragma omp atomic
-      F[FMMGEN_OUTPUTSIZE*l1 + k] += F_p[k];
     }
   }
 }
 
 void interact_dehnen(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles,
 		     double theta, size_t order, size_t ncrit, double *F) {
-  double dx = cells[A].x - cells[B].x;
-  double dy = cells[A].y - cells[B].y;
-  double dz = cells[A].z - cells[B].z;
+  double dx = (cells[A].x - cells[B].x);
+  double dy = (cells[A].y - cells[B].y);
+  double dz = (cells[A].z - cells[B].z);
   double R = sqrt(dx*dx + dy*dy + dz*dz);
 
   if (R*theta > (cells[A].rmax + cells[B].rmax)) {
@@ -128,6 +124,10 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
   for(size_t c = 0; c < cells.size(); c++) {
     //std::cout << "Cell " << c << std::endl;
     //std::cout << "  Msize = " << Msize(exporder, FMMGEN_SOURCEORDER) << std::endl;
+    size_t msize = Msize(exporder, FMMGEN_SOURCEORDER);
+    if (c == 0) {
+        std::cout << "msize = " << msize << std::endl;
+    }
     double *M = new double[Msize(exporder, FMMGEN_SOURCEORDER)]();
     if (cells[c].nleaf < ncrit) {
       for(size_t i = 0; i < cells[c].nleaf; i++) {
@@ -138,9 +138,10 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
         double dy = (particles[l].r[1] - cells[c].y);
         double dz = (particles[l].r[2] - cells[c].z);
         for(int k = 0; k < FMMGEN_SOURCESIZE; k++) {
+          // std::cout << particles[l].S[k] << std::endl;
           M[k] = particles[l].S[k];
         }
-        M2M(-dx, -dy, -dz, M, cells[c].M, exporder);
+        M2M(dx, dy, dz, M, cells[c].M, exporder);
       }
    }
    delete[] M;
@@ -230,7 +231,7 @@ void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
         double dx = particles[k].r[0] - cells[i].x;
         double dy = particles[k].r[1] - cells[i].y;
         double dz = particles[k].r[2] - cells[i].z;
-        L2P(dx, dy, dz, cells[i].L, &F[k], exporder);
+        L2P(dx, dy, dz, cells[i].L, &F[FMMGEN_OUTPUTSIZE*k], exporder);
       }
     }
   }

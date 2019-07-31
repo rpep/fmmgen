@@ -3,7 +3,7 @@ from sympy.printing.cxxcode import CXX11CodePrinter as CXX11Base
 import logging
 logger = logging.getLogger(name="fmmgen")
 import sympy as sp
-
+from fmmgen.cse import cse
 
 class CCodePrinter(C99Base):
     def __init__(self, settings={}, minpow=False):
