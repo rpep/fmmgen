@@ -35,6 +35,20 @@ language_mapping = {'c': CCodePrinter,
 
 
 
+class SymbolIterator:
+    def __init__(self, name):
+        self.name = name
+        self.num = 0
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        num = self.num
+        self.num += 1
+        return sp.Symbol(self.name + 'tmp' + str(num))
+
+
 class FunctionPrinter:
     def __init__(self, language='c', precision='double', debug=True, gpu=False, minpow=False):
         logger.info(f"Function Printer created with precision \"{precision}\"")
@@ -60,39 +74,53 @@ class FunctionPrinter:
         self.precision = precision
         assert self.precision in ['float', 'double']
 
-    def _generate_body(self, LHS, RHS, operator='=', atomic=False):
-        # Find the reduced RHS equation.
-        logger.debug(f"Generating body for LHS = {str(LHS)}")
+    def _array(self, name, matrix, allocate=False, operator='=', atomic=False):
         code = ""
 
-        if sp.symbols('R') in RHS.free_symbols:
+        if sp.symbols('R') in matrix.free_symbols:
             code += f'{self.precision} R = sqrt(x*x + y*y + z*z);\n'
 
+        if allocate:
+            code += f'{self.precision} {name}[{len(matrix)}];\n'
+
         if not self.debug:
-            sub_expressions, rRHS = cse(RHS)
+            iterator = SymbolIterator(name)
+            sub_expressions, rRHS = cse(matrix, symbols=iterator)
             rRHS = sp.Matrix(rRHS)
-
-            for var, _ in sub_expressions:
-                code += f'{self.precision} {var};\n'
-
             for i, (var, sub_expr) in enumerate(sub_expressions):
-                code += self.printer.doprint(sub_expr, assign_to=var) + "\n"
+                code += f'{self.precision} ' + self.printer.doprint(sub_expr, assign_to=var) + "\n"
 
 
-            tmp = self.printer.doprint(rRHS, assign_to=LHS).replace('=',
-                                                                      operator)
+            tmp = self.printer.doprint(rRHS, assign_to=name).replace('=',
+                                                                    operator)
+
         else:
-            tmp = self.printer.doprint(RHS, assign_to=LHS).replace('=',
-                                                                     operator)
+            tmp = self.printer.doprint(matrix, assign_to=name).replace('=',
+                                                                       operator)
+
         if atomic:
             lines = tmp.split('\n')
             for l in lines:
                 code += '#pragma omp atomic\n'
                 code += l + '\n'
         else:
-            code += tmp
-
+            code += tmp + '\n'
         return code
+
+
+
+
+    def _generate_body(self, LHS, RHS, internal=[], operator='=', atomic=False):
+        # Find the reduced RHS equation.
+        logger.debug(f"Generating body for LHS = {str(LHS)}")
+        code = ""
+
+        for arr_name, matrix in internal:
+            code += self._array(arr_name, matrix, allocate=True)
+
+        code += self._array(LHS, RHS, operator=operator, atomic=atomic)
+        return code
+
 
     def _generate_header(self, name, LHS, RHS, inputs):
         logger.debug(f"Generating headerfile for LHS = {str(LHS)}")
@@ -114,10 +142,10 @@ class FunctionPrinter:
         else:
             return "void {}({})".format(name, combined_inputs)
 
-    def generate(self, name, LHS, RHS, inputs, operator='=', atomic=False):
+    def generate(self, name, LHS, RHS, inputs, operator='=', atomic=False, internal=[]):
         header = self._generate_header(name, LHS, RHS, inputs)
         code = header + ' {\n'
-        code += self._generate_body(LHS, RHS, operator, atomic=atomic)
+        code += self._generate_body(LHS, RHS, internal, operator, atomic=atomic)
         code += '\n}\n'
         header += ';\n'
 
@@ -178,8 +206,8 @@ def generate_code(order, name, precision='double',
     if language == 'c++':
         fext = 'cpp'
         hext = 'h'
-    
-    
+
+
     logger.info(f"Generating FMM operators to order {order}")
     assert precision in ['double', 'float'], "Precision must be float or double"
     logger.info(f"Precision = {precision}")
@@ -365,7 +393,7 @@ def generate_code(order, name, precision='double',
         f.write(f'#include "math.h"\n')
     elif language == 'c++':
         f.write(f'#include<cmath>\n')
-    
+
     f.write(body)
     f.close()
 
@@ -387,7 +415,7 @@ def generate_code(order, name, precision='double',
             {}
         """)
         f.write(pxdcode.format(name, '\n    '.join(func_definitions)))
-        
+
         f.close()
 
         f = open(f"{name}_wrap.pyx", "w")
@@ -402,7 +430,7 @@ def generate_code(order, name, precision='double',
         FMMGEN_SOURCEORDER = {}.FMMGEN_SOURCEORDER
         FMMGEN_SOURCESIZE = {}.FMMGEN_SOURCESIZE
         FMMGEN_OUTPUTSIZE = {}.FMMGEN_OUTPUTSIZE
-        """).format(*[name + '_decl']*5) 
+        """).format(*[name + '_decl']*5)
 
         subsdict = {" *": "[:]",
                     "void": "cpdef",
