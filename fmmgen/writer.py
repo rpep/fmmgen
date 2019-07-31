@@ -8,7 +8,7 @@ Created on Sat Feb  9 08:41:10 2019
 import os
 import subprocess
 import sympy as sp
-import logging
+
 # from sympy.printing.fcode import FCodePrinter
 from fmmgen.printers import *
 from fmmgen.utils import Nterms
@@ -19,9 +19,10 @@ from fmmgen.generator import generate_mappings, generate_M_operators, \
                   generate_L_shift_operators, \
                   generate_L2P_operators, \
                   generate_M2P_operators, \
-                  generate_P2P_operators
+                  generate_P2P_operators, generate_derivs
 
 
+import logging
 logger = logging.getLogger(name="fmmgen")
 
 
@@ -139,16 +140,16 @@ def generate_code(order, name, precision='double',
         header += head
         body += code + '\n'
 
+        # Two stages here; generate derivs and then the L matrix. Both
+        # must be passed to the function printer.
+        derivs = sp.Matrix(generate_derivs(i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs))
         L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict,
-                      source_order=source_order, harmonic_derivs=harmonic_derivs))
-
-        # print(f"L = {L}")
-
+                      source_order=source_order))
 
         head, code = p.generate(f'M2L_{i}', 'L', L,
                                list(symbols) +  \
                                [sp.MatrixSymbol('M', Nterms(i), 1)],
-                                operator="+=", atomic=atomic)
+                                operator="+=", atomic=atomic, internal=[('D', derivs)])
         header += head
         body += code + '\n'
 

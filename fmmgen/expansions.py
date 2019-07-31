@@ -4,6 +4,8 @@ from sympy import factorial
 from sympy import itermonomials
 from .utils import q, Nterms, generate_mappings
 import functools
+import logging
+logger = logging.getLogger(name="fmmgen")
 
 def fact(n):
     nx, ny, nz = n
@@ -131,7 +133,7 @@ def Phi_derivatives(n, symbols, harmonic=False):
         k2 = (k[0], k[1] + 2, k[2])
         return -(Phi_derivatives(k1, symbols, harmonic=harmonic)) - (Phi_derivatives(k2, symbols, harmonic=harmonic))
 
-def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0, harmonic_derivs=False):
+def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
     assert order >= source_order, "order must be >= source_order"
 
     #print(sum(n), order - source_order)
@@ -156,7 +158,7 @@ def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0, harmonic_deri
         if npm[0] >= 0 and npm[1] >= 0 and npm[2] >= 0 and sum(m) >= source_order:
             M = sp.MatrixSymbol('M', Nterms(order), 1)[M_dict[m]]
             if eval_derivs:
-                result += M*Phi_derivatives(npm, symbols, harmonic=harmonic_derivs)
+                result += M*Phi_derivatives(npm, symbols)
             else:
                 result += M*D[M_dict[npm]]
     return result

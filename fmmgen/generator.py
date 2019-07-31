@@ -1,8 +1,10 @@
 import sympy as sp
-from .expansions import M, M_shift, L, L_shift, phi_deriv
+from .expansions import M, M_shift, L, L_shift, phi_deriv, Phi_derivatives
 from sympy.polys.orderings import monomial_key
 from .utils import itermonomials, generate_mappings, Nterms
 from sympy.polys.monomials import itermonomials as sp_itermonomials
+import logging
+logger = logging.getLogger(name="fmmgen")
 
 def itermonomials(symbols, max_degree, min_degree=0):
     monoms = list(sp_itermonomials(symbols, max_degree))
@@ -147,8 +149,22 @@ def generate_M_shift_operators(order, symbols, M_dict, source_order=0):
                                    source_order=source_order))
     return M_operators
 
+def generate_derivs(order, symbols, M_dict, source_order=0, harmonic_derivs=False):
+    D = sp.MatrixSymbol('D', Nterms(order), 1)
+    derivs = []
+    for n in M_dict.keys():
+        if n[2] > 1 and harmonic_derivs:
+            print(f'n = {n}')
+            k = (n[0], n[1], n[2] - 2)
+            print(f'k = {k}')
+            k1 = (k[0] + 2, k[1], k[2])
+            k2 = (k[0], k[1] + 2, k[2])
+            derivs.append(-D[M_dict[k1]] - D[M_dict[k2]])
+        else:
+            derivs.append(Phi_derivatives(n, symbols))
+    return derivs
 
-def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0, harmonic_derivs=False):
+def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0):
     """
     generate_L_operators(order, symbols, index_dict):
 
@@ -184,7 +200,8 @@ def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0, harmoni
     x, y, z = symbols
     L_operators = []
     for n in L_dict.keys():
-        L_operators.append(L(n, order, symbols, M_dict, source_order=source_order, harmonic_derivs=harmonic_derivs))
+        L_operators.append(L(n, order, symbols, M_dict, source_order=source_order, eval_derivs=False))
+
     return L_operators
 
 
@@ -239,7 +256,7 @@ def generate_M2P_operators(order, symbols, M_dict,
 
     terms = []
 
-    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, harmonic_derivs=harmonic_derivs).subs('R', R)
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, eval_derivs=True).subs('R', R)
     if potential:
         terms.append(V.subs(R, 'R'))
 

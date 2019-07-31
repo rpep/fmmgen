@@ -1,5 +1,9 @@
 from  sympy.printing.ccode import C99CodePrinter as C99Base
 from sympy.printing.cxxcode import CXX11CodePrinter as CXX11Base
+import logging
+logger = logging.getLogger(name="fmmgen")
+import sympy as sp
+
 
 class CCodePrinter(C99Base):
     def __init__(self, settings={}, minpow=False):
@@ -39,7 +43,6 @@ class CXXCodePrinter(CXX11Base):
             return super()._print_Pow(expr)
 
 language_mapping = {'c': CCodePrinter,
-#                   'fortran': FCodePrinter,
                     'c++': CXXCodePrinter,
                     }
 
