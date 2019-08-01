@@ -1,7 +1,7 @@
 import sympy as sp
 from sympy.polys.orderings import monomial_key
 from sympy import factorial
-from sympy import itermonomials
+from sympy import itermonomials, binomial
 from .utils import q, Nterms, generate_mappings
 import functools
 import logging
@@ -10,6 +10,11 @@ logger = logging.getLogger(name="fmmgen")
 def fact(n):
     nx, ny, nz = n
     return factorial(nx)*factorial(ny)*factorial(nz)
+
+def binom(n, k):
+    nx, ny, nz = n
+    kx, ky, kz = k
+    return binomial(nx, kx) * binomial(ny, ky) * binomial(nz, kz)
 
 
 def M(n, symbols, source_order=0):
@@ -29,7 +34,7 @@ def M(n, symbols, source_order=0):
     if source_order > 0:
         raise NotImplementedError("Not implemented!")
 
-    return q * (-1)**sum(n) * dx**n[0] * dy**n[1] * dz**n[2] / fact(n)
+    return (-1)**(sum(n)) * q * dx**n[0] * dy**n[1] * dz**n[2] / fact(n)
 
 
 def M_shift(n, order, symbols, index_dict, source_order=0):

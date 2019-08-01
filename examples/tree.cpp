@@ -36,8 +36,6 @@ Cell::Cell(const Cell& other) {
     this->parent = other.parent;
     this->level = other.level;
     this->child = other.child;
-    // std::copy(other.M.begin(), other.M.end(), std::back_inserter(this->M));
-    // std::copy(other.L.begin(), other.L.end(), std::back_inserter(this->L));
     std::copy(other.leaf.begin(), other.leaf.end(), std::back_inserter(this->leaf));
     std::copy(other.child.begin(), other.child.end(), std::back_inserter(this->child));
     this->nleaf = other.nleaf;
@@ -53,8 +51,6 @@ Cell::Cell(Cell&& other) {
   this->parent = other.parent;
   this->level = other.level;
   this->child = other.child;
-  //this->M = std::move(other.M);
-  //this->L = std::move(other.L);
   this->M = other.M;
   this->L = other.L;
   this->leaf = other.leaf;
@@ -254,6 +250,10 @@ void Tree::compute_field_fmm(double *F) {
   }
 
   evaluate_M2M(particles, cells, order);
+	
+  #ifdef FMMLIBDEBUG
+  M_sanity_check(cells);
+  #endif
 
   #pragma omp parallel
   {
@@ -279,6 +279,11 @@ void Tree::compute_field_bh(double *F) {
   }
 
   evaluate_M2M(particles, cells, order);
+
+  #ifdef FMMLIBDEBUG
+  M_sanity_check(cells);
+  #endif
+
   #pragma omp parallel for schedule(runtime)
   for (unsigned int i = 0; i < particles.size(); i++) {
     evaluate_M2P_and_P2P(particles, 0, i, cells, F, ncrit, theta, order);

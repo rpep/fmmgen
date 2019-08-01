@@ -4,10 +4,11 @@ from fmmgen.utils import Nterms
 import logging
 logging.getLogger('fmmgen')
 
+TOTALORDER = 4
 
 def test_linear_dipole():
     source_order = 0
-    order = source_order + 6
+    order = source_order + TOTALORDER
     cse = True
     atomic = True
     precision='double'
@@ -15,7 +16,7 @@ def test_linear_dipole():
     fmmgen.generate_code(order, "LinearDipole",
                          precision=precision,
                          CSE=cse,
-                         cython_wrapper=True,
+                         cython=True,
                          potential=True,
                          field=True,
                          source_order=source_order,
@@ -32,8 +33,8 @@ def test_linear_dipole():
     # We should get [0, 0, 0, q*d, ...] as the multipole moment
     d = 1.0
     q = 5.0
-    x1 = np.array([d/2, 0.0, 0.0])
-    x2 = np.array([-d/2, 0.0, 0.0])
+    x1 = np.array([d, 0.0, 0.0])
+    x2 = np.array([-d, 0.0, 0.0])
     O = np.array([0.0, 0.0, 0.0])
 
     for Order in range(1, fmm.FMMGEN_MAXORDER):
@@ -45,13 +46,13 @@ def test_linear_dipole():
 
         M = np.zeros(Msize)
 
-        fmm.M2M(*(x1-O), S_px, M, Order)
-        fmm.M2M(*(x2-O), S_mx, M, Order)
+        fmm.M2M(*(O-x1), S_px, M, Order)
+        fmm.M2M(*(O-x2), S_mx, M, Order)
 
         print(M)
         
         assert M[0] == 0.0
-        assert M[1] == q*d
+        assert M[1] == -2*q*d
         assert M[2] == 0.0
         assert M[3] == 0.0
 
@@ -59,7 +60,7 @@ def test_linear_dipole():
 def test_linear_quadrupole():
     print('test_linear_quadrupole')
     source_order = 0
-    order = source_order + 6
+    order = source_order + TOTALORDER
     cse = True
     atomic = True
     precision='double'
@@ -67,7 +68,7 @@ def test_linear_quadrupole():
     fmmgen.generate_code(order, "LinearQuadrupole",
                          precision=precision,
                          CSE=cse,
-                         cython_wrapper=True,
+                         cython=True,
                          potential=True,
                          field=True,
                          source_order=source_order,
@@ -88,7 +89,7 @@ def test_linear_quadrupole():
     
     # Compute multipole at origin
     # We should get [0, 0, 0, 0, ...] as the multipole moment
-    d = 1.0
+    d = 2.0
     q = 5.0
     x1 = np.array([-d, 0.0, 0.0])
     x2 = np.array([d, 0.0, 0.0])
@@ -105,8 +106,9 @@ def test_linear_quadrupole():
         
         M = np.zeros(Msize)
 
-        fmm.M2M(*(x1-O), S_px, M, Order)
-        fmm.M2M(*(x2-O), S_mx, M, Order)
+        fmm.M2M(*(O-x1), S_mx, M, Order)
+        print(M)
+        fmm.M2M(*(O-x2), S_px, M, Order)
         fmm.M2M(*(O-O), S_O, M, Order)
         print(M)
 
@@ -114,12 +116,12 @@ def test_linear_quadrupole():
         assert M[1] == 0.0
         assert M[2] == 0.0
         assert M[3] == 0.0
-        assert M[4] == -5.0
+        assert M[4] == -2*d*q
 
 def test_quadrupole_two_dipoles():
     print('test_quadrupole_two_dipoles')
     source_order = 0
-    order = source_order + 6
+    order = source_order + TOTALORDER
     cse = True
     atomic = True
     precision='double'
@@ -127,7 +129,7 @@ def test_quadrupole_two_dipoles():
     fmmgen.generate_code(order, "QuadrupoleTwoDipoles",
                          precision=precision,
                          CSE=cse,
-                         cython_wrapper=True,
+                         cython=True,
                          potential=True,
                          field=True,
                          source_order=source_order,
@@ -147,10 +149,10 @@ def test_quadrupole_two_dipoles():
     
     # Compute multipole at origin
     # We should get [0, 0, 0, 0.0, ...] as the multipole moment
-    d = 1.0
-    mux = 5.0
-    xp = np.array([d/2, 0.0, 0.0])
-    xm = np.array([-d/2, 0.0, 0.0])
+    d = 2.0
+    mux = -5.0
+    xp = np.array([d, 0.0, 0.0])
+    xm = np.array([-d, 0.0, 0.0])
     O = np.array([0.0, 0.0, 0.0])
 
     for Order in range(2, fmm.FMMGEN_MAXORDER):
@@ -163,15 +165,15 @@ def test_quadrupole_two_dipoles():
         
         M = np.zeros(Msize)
 
-        fmm.M2M(*(xp-O), S_px, M, Order)
+        fmm.M2M(*(O-xp), S_px, M, Order)
         # print(f'M after dipole ({-mux}, 0, 0) at({}/2, 0, 0) = {M}')
-        fmm.M2M(*(xm-O), S_mx, M, Order)
+        fmm.M2M(*(O-xm), S_mx, M, Order)
         print(M)
         assert M[0] == 0.0
         assert M[1] == 0.0
         assert M[2] == 0.0
         assert M[3] == 0.0
-        assert M[4] == -5.0
+        assert M[4] == 2*mux*d
 
 if __name__ == "__main__":
     test_linear_dipole()

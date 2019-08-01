@@ -14,6 +14,8 @@
 #include <iostream>
 #include<omp.h>
 
+void M_sanity_check(const std::vector<Cell> &cells);
+
 void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
 		  size_t cell, size_t ncrit, size_t exporder);
 

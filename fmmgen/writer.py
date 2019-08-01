@@ -32,7 +32,7 @@ symbols = (x, y, z)
 
 
 def generate_code(order, name, precision='double',
-                  cython_wrapper=False,
+                  cython=False,
                   CSE=False, harmonic_derivs=False,
                   include_dir=None, src_dir=None,
                   potential=True, field=True,
@@ -277,10 +277,10 @@ def generate_code(order, name, precision='double',
     f.write(body)
     f.close()
 
-    if cython_wrapper and gpu:
+    if cython and gpu:
         raise Warning("Cannot write a Cython wrapper for GPU code; skipping")
 
-    elif cython_wrapper:
+    elif cython:
         logger.info(f"Generating Cython wrapper: {name}_wrap.pyx")
         library = f"{name}"
 
@@ -357,7 +357,7 @@ def generate_code(order, name, precision='double',
                              include_dirs=[np.get_include(), '.'],
                              library_dirs=['.'],
                              extra_link_args=[],
-                             extra_compile_args=['-O3'])
+                             extra_compile_args=['-O3', '-fopenmp'])
         """).format(library + '.c', library)
 
         f.write(bldcode)

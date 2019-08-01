@@ -6,6 +6,20 @@
 #include <stack>
 #include <cmath>
 
+void M_sanity_check(const std::vector<Cell> &cells) {
+	double M0 = 0;
+	for(size_t c = 1; c < cells.size(); c++) {
+      if (cells[c].nchild == 0) {
+		    M0 += cells[c].M[0];
+	    }
+  }
+	std::cout << "Cell 0 has M0 = " << cells[0].M[0] << std::endl;
+	std::cout << "Other cells   = " << M0 << std::endl;
+  if (std::abs((cells[0].M[0] - M0)/M0) > 10e-10) {
+    throw std::runtime_error("M0 sanity check failed");
+  }
+}
+
 
 void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double *F) {
   // A - target
@@ -125,18 +139,16 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
     //std::cout << "Cell " << c << std::endl;
     //std::cout << "  Msize = " << Msize(exporder, FMMGEN_SOURCEORDER) << std::endl;
     size_t msize = Msize(exporder, FMMGEN_SOURCEORDER);
-    if (c == 0) {
-        std::cout << "msize = " << msize << std::endl;
-    }
-    double *M = new double[Msize(exporder, FMMGEN_SOURCEORDER)]();
+    double *M = new double[msize]();
+
     if (cells[c].nleaf < ncrit) {
       for(size_t i = 0; i < cells[c].nleaf; i++) {
         size_t l = cells[c].leaf[i];
         // Walter dehnen's definition:
         // (-1)^m / m! (x_a - z_a)^m
-        double dx = (particles[l].r[0] - cells[c].x);
-        double dy = (particles[l].r[1] - cells[c].y);
-        double dz = (particles[l].r[2] - cells[c].z);
+        double dx = (cells[c].x - particles[l].r[0]);
+        double dy = (cells[c].y - particles[l].r[1]);
+        double dz = (cells[c].z - particles[l].r[2]);
         for(int k = 0; k < FMMGEN_SOURCESIZE; k++) {
           // std::cout << particles[l].S[k] << std::endl;
           M[k] = particles[l].S[k];
@@ -167,9 +179,9 @@ void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
   // M_m(z_p) = (z_p - z_c)^n / n! M_{m - n}
   for (size_t c = cells.size() - 1; c > 0; c--) {
     size_t p = cells[c].parent;
-    double dx = cells[p].x - cells[c].x;
-    double dy = cells[p].y - cells[c].y;
-    double dz = cells[p].z - cells[c].z;
+    double dx = (cells[p].x - cells[c].x);
+    double dy = (cells[p].y - cells[c].y);
+    double dz = (cells[p].z - cells[c].z);
     M2M(dx, dy, dz, cells[c].M, cells[p].M, exporder);
   }
 }
@@ -207,15 +219,15 @@ void evaluate_P2P_lazy(std::vector<Cell> &cells, std::vector<Particle> &particle
 void evaluate_L2L(std::vector<Cell> &cells, size_t exporder) {
   // Can't currently go down the tree in parallel!
   // needs to be recursive or summing not correct.
-  for (size_t i = 0; i < cells.size(); i++) {
+  for (size_t p = 0; p < cells.size(); p++) {
     for (int octant = 0; octant < 8; octant++) {
-      if (cells[i].nchild & (1 << octant)) {
-        // for child c in cell i
-        size_t c = cells[i].child[octant];
-        double dx = cells[c].x - cells[i].x;
-        double dy = cells[c].y - cells[i].y;
-        double dz = cells[c].z - cells[i].z;
-        L2L(dx, dy, dz, cells[i].L, cells[c].L, exporder);
+      if (cells[p].nchild & (1 << octant)) {
+        // for child c in cell p
+        size_t c = cells[p].child[octant];
+        double dx = cells[c].x - cells[p].x;
+        double dy = cells[c].y - cells[p].y;
+        double dz = cells[c].z - cells[p].z;
+        L2L(dx, dy, dz, cells[p].L, cells[c].L, exporder);
       }
     }
   }
@@ -279,7 +291,7 @@ void evaluate_M2P_and_P2P(std::vector<Particle> &particles, unsigned int p, unsi
         else {
             // If the cell is 'far', calculate the potential and field
             // on the particle from the multipole expansion:
-            M2P(dx, dy, dz, cells[c].M, &F[i], exporder);
+            M2P(dx, dy, dz, cells[c].M, &F[FMMGEN_OUTPUTSIZE*i], exporder);
         }
       }
     }

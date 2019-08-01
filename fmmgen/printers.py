@@ -1,9 +1,10 @@
-from  sympy.printing.ccode import C99CodePrinter as C99Base
+from sympy.printing.ccode import C99CodePrinter as C99Base
 from sympy.printing.cxxcode import CXX11CodePrinter as CXX11Base
 import logging
 logger = logging.getLogger(name="fmmgen")
 import sympy as sp
 from fmmgen.cse import cse
+from fmmgen.opts import basic as opts
 
 class CCodePrinter(C99Base):
     def __init__(self, settings={}, minpow=False):
@@ -87,7 +88,7 @@ class FunctionPrinter:
         self.precision = precision
         assert self.precision in ['float', 'double']
 
-    def _array(self, name, matrix, allocate=False, operator='=', atomic=False):
+    def _array(self, name, matrix, allocate=False, operator='=', atomic=False, ignore_symbols=[]):
         code = ""
 
         if sp.symbols('R') in matrix.free_symbols:
@@ -98,7 +99,9 @@ class FunctionPrinter:
 
         if not self.debug:
             iterator = SymbolIterator(name)
-            sub_expressions, rRHS = cse(matrix, symbols=iterator)
+            # print(f'ignoring {name} in cse')
+            sub_expressions, rRHS = cse(matrix, optimizations=opts, symbols=iterator, ignore=(ignore_symbols))
+        
             rRHS = sp.Matrix(rRHS)
             for i, (var, sub_expr) in enumerate(sub_expressions):
                 code += f'{self.precision} ' + self.printer.doprint(sub_expr, assign_to=var) + "\n"
@@ -129,7 +132,7 @@ class FunctionPrinter:
         code = ""
 
         for arr_name, matrix in internal:
-            code += self._array(arr_name, matrix, allocate=True)
+            code += self._array(arr_name, matrix, allocate=True, ignore_symbols=[arr_name])
 
         code += self._array(LHS, RHS, operator=operator, atomic=atomic)
         return code

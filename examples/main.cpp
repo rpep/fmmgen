@@ -30,6 +30,13 @@ int main(int argc, char **argv) {
   std::cout << "FMMGEN_SOURCEORDER = " << FMMGEN_SOURCEORDER << std::endl;  
   std::cout << "FMMGEN_OUTPUTSIZE = " << FMMGEN_OUTPUTSIZE << std::endl;
   std::cout << "FMMGEN_SOURCESIZE = " << FMMGEN_SOURCESIZE << std::endl;
+  std::cout << "FMMGEN TYPE = ";
+  if (type == 0) {
+    std::cout << "Fast Multipole Method (Lazy Evaluation)" << std::endl;
+  }
+  if (type == 1) {
+    std::cout << "Barnes-Hut Method" << std::endl;
+  }
 
   std::vector<double> F_exact(FMMGEN_OUTPUTSIZE * Nparticles, 0.0);
   std::vector<double> F_approx(FMMGEN_OUTPUTSIZE * Nparticles, 0.0);

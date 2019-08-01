@@ -1,15 +1,15 @@
 import fmmgen
 
-source_order = 1
-order = source_order + 4
-cse = False
+source_order = 2
+order = source_order + 8
+cse = True
 atomic = True
 precision='double'
 
 fmmgen.generate_code(order, "operators",
                      precision=precision,
                      CSE=cse,
-                     cython_wrapper=False,
+                     cython=False,
                      potential=True,
                      field=True,
                      source_order=source_order,
