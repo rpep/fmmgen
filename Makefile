@@ -1,5 +1,5 @@
 install:
-	pip install -e . --user
+	pip3 install -e . --user
 
 runtests:
 	cd tests && py.test -v

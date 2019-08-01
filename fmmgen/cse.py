@@ -62,9 +62,12 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=()):
 
         else:
             if expr in seen_subexp:
+                # print(expr.free_symbols)
                 for ign in ignore:
-                    if ign in expr.free_symbols:
+                    if str(ign) in [str(i) for i in expr.free_symbols]:
+                        # print(f'Skipping {expr}')
                         break
+                        
                 else:
                     to_eliminate.add(expr)
                     return
