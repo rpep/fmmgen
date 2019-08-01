@@ -1,7 +1,7 @@
 import fmmgen
 
-source_order = 2
-order = source_order + 8
+source_order = 0
+order = source_order + 5
 cse = True
 atomic = True
 precision='double'
@@ -14,5 +14,5 @@ fmmgen.generate_code(order, "operators",
                      field=True,
                      source_order=source_order,
                      atomic=atomic, minpow=5,
-                     harmonic_derivs=True,
+                     harmonic_derivs=False,
                      language='c++')

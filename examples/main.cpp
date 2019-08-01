@@ -10,16 +10,58 @@
 #include <iostream>
 #include <random>
 #include <string>
+#include "args.hxx"
 
-int main(int argc, char **argv) {
+int main(int argc, const char **argv) {
   // Set initial parameters by user input from
   // the command line:
-  size_t Nparticles = std::stoul(argv[1]);
-  size_t ncrit = std::stoul(argv[2]);
-  double theta = std::stod(argv[3]);
-  size_t type = std::stoul(argv[4]); // type == 0, FMM, type == 1, BH
+  args::ArgumentParser parser("Fmmgen Example Code.", "This shows how the program scales and prints field,\n"
+                                                      "error, and particle position and source strengths\n"
+                                                      "to a file");
 
-  const size_t calc_direct = 1;	  
+  args::HelpFlag help(parser, "help", "Display this help menu", {'h', "help"});
+  args::Flag nodirect(parser, "Disable calculate direct", "Disables direct field calculation", {'d', "nodirect"});
+  args::ValueFlag<size_t> nparticles(parser, "nparticles", "The total number of particles", {'n', "nparticles"});
+  args::ValueFlag<float> thet(parser, "theta", "The opening angle parameter which controls error", {'t', "theta"});
+  args::ValueFlag<size_t> nc(parser, "ncrit", "The maximum number of particles in a cell", {"nc", "ncrit"});
+  args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"ty", "type"});
+
+  try
+  {
+      parser.ParseCLI(argc, argv);
+  }
+  catch (const args::Completion& e)
+  {
+      std::cout << e.what();
+      return 0;
+  }
+  catch (const args::Help&)
+  {
+      std::cout << parser;
+      return 0;
+  }
+  catch (const args::ParseError& e)
+  {
+      std::cerr << e.what() << std::endl;
+      std::cerr << parser;
+      return 1;
+  }
+
+  size_t Nparticles, ncrit, type;
+  double theta;
+  // parser.parse(argc, argv);
+  if (nparticles) {Nparticles = args::get(nparticles);}
+  else {Nparticles = 10000;}
+  if (nc) {ncrit = args::get(nc);}
+  else {ncrit = 64;}
+  if (thet) {theta = args::get(thet);}
+  else {theta = 0.4;}
+  if (typ) {type = args::get(typ);}
+  else {type = 0;}
+  if (type > 1) {
+    throw std::runtime_error("Type must be either 0 (Fast Multipole) or 1 (Barnes-Hut)");
+  }
+
   std::cout << "Scaling Test Parameters" << std::endl;
   std::cout << "-----------------------" << std::endl;
   std::cout << "Nparticles = " << Nparticles << std::endl;
@@ -70,19 +112,29 @@ int main(int argc, char **argv) {
   double t_direct;
   double t_approx;
 
+
   for (size_t order = FMMGEN_MINORDER; order < FMMGEN_MAXORDER; order++) {
+    // If you're wanting to use the library, this is the part you need to look at!
+    // Warning: Check what the standard of your field of study is. Various
+    // conventions apply for the sign with regards to dipole and quadrupole 
+    // orientation!
     Tree tree = build_tree(r, S, Nparticles, ncrit, order, theta);
-    std::cout << "Tree built with " << tree.cells.size() << " cells.\n\n\n" << std::endl;
-    std::cout << "Order " << order << "\n-------" << std::endl;
     std::fill(F_approx.begin(), F_approx.end(), 0);
-    if (order == FMMGEN_MINORDER && calc_direct) {
+    if (order == FMMGEN_MINORDER && !nodirect) {
+      std::cout << "Direct\n-------" << std::endl;
       Timer timer;
       tree.compute_field_exact(F_exact.data());
       t_direct = timer.elapsed();
       std::cout << "t_direct = " << t_direct << std::endl;
     }
+    std::cout << "Order " << order << "\n-------" << std::endl;
+
+    #ifdef FMMLIBDEBUG
+    std::cout << "Tree built with " << tree.cells.size() << " cells.\n\n\n" << std::endl;
+    #endif
 
     Timer timer;
+    // Check the type of simulation, run the appropriate calculation:
     if (type == 0) {
 	   tree.compute_field_fmm(F_approx.data());
     }
@@ -91,7 +143,9 @@ int main(int argc, char **argv) {
     }
     t_approx = timer.elapsed();
 
-    if (calc_direct) {
+
+    // If direct calculation is enabled, check the error:
+    if (!nodirect) {
         double Exrel_err = 0;
         double Eyrel_err = 0;
         double Ezrel_err = 0;
@@ -108,7 +162,7 @@ int main(int argc, char **argv) {
             for(int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
               double err = (F_exact[FMMGEN_OUTPUTSIZE * i + k] - F_approx[FMMGEN_OUTPUTSIZE * i + k]) / F_exact[FMMGEN_OUTPUTSIZE * i + k];
               fout << err << ",";
-              errs[k] += sqrt(err * err);
+              errs[k] += std::abs(err);
           }
           fout << std::endl;
         }
@@ -121,12 +175,11 @@ int main(int argc, char **argv) {
     }
 
     std::cout << "Approx. calculation  = " << t_approx << " seconds. " << std::endl;
-    if (calc_direct) {
+
+    // If direct calculation enabled, print the field to a file for checking
+    if (!nodirect) {
 	    std:: cout << std::setw(10) << t_approx / t_direct * 100 << "% of direct time."
   	    << std::endl;
-    }
-
-    if (calc_direct) {
         auto filename = "field_p_" + std::to_string(order) +
                              "_n_" + std::to_string(Nparticles) +
                              "_ncrit_" + std::to_string(ncrit) +

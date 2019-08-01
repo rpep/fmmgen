@@ -154,8 +154,9 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
   xavg /= particles.size();
   yavg /= particles.size();
   zavg /= particles.size();
+  #ifdef FMMLIBDEBUG
   std:: cout << "Building Tree: Avg pos = (" << xavg << ", " << yavg << ", " << zavg << ")" << std::endl;
-
+  #endif
   double xmax = 0;
   double ymax = 0;
   double zmax = 0;
@@ -179,8 +180,9 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
   // else if ymax > zmax, return ymax
   // else return zmax
   // * 1.001 so that cell slightly bigger than furthest away particle.
+  // std::cout << "xmax = " << xmax << ", ymax = " << ymax << ", zmax = " << zmax << ", rmax = " << r << std::endl;
+
   double r = (xmax > ymax ? (xmax > zmax? xmax: zmax): (ymax > zmax ? ymax: zmax)) * 1.001;
-  std::cout << "xmax = " << xmax << ", ymax = " << ymax << ", zmax = " << zmax << ", rmax = " << r << std::endl;
   auto root = Cell(xavg, yavg, zavg, r, 0, order, 0, ncrit);
 
   cells.push_back(root);
