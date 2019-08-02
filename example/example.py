@@ -1,7 +1,7 @@
 import fmmgen
 
 source_order = 0
-order = source_order + 5
+order = source_order + 12
 cse = True
 atomic = True
 precision='double'
