@@ -23,8 +23,9 @@ int main(int argc, const char **argv) {
   args::Flag nodirect(parser, "Disable calculate direct", "Disables direct field calculation", {'d', "nodirect"});
   args::ValueFlag<size_t> nparticles(parser, "nparticles", "The total number of particles", {'n', "nparticles"});
   args::ValueFlag<float> thet(parser, "theta", "The opening angle parameter which controls error", {'t', "theta"});
-  args::ValueFlag<size_t> nc(parser, "ncrit", "The maximum number of particles in a cell", {"nc", "ncrit"});
-  args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"ty", "type"});
+  args::ValueFlag<size_t> nc(parser, "ncrit", "The maximum number of particles in a cell", {"n", "ncrit"});
+  args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"T", "type"});
+  args::ValueFlag<std::string> filelabel(parser, "label", "Label for the output files", {"l", "label"});
 
   try
   {
@@ -112,8 +113,24 @@ int main(int argc, const char **argv) {
   double t_direct;
   double t_approx;
 
+  auto base_filename = "_n_" + std::to_string(Nparticles) +
+    "_ncrit_" + std::to_string(ncrit) +                                                                               
+    "_theta_" + std::to_string(theta) +
+    "_type_" + std::to_string(type);
+  if (filelabel) {                                                                                                                     
+    base_filename += "_label_" + args::get(filelabel);
+  }
+  base_filename += ".txt";
+  
+
+  auto time_filename = "times" + base_filename;
+
+  std::ofstream timeout(time_filename);
 
   for (size_t order = FMMGEN_MINORDER; order < FMMGEN_MAXORDER; order++) {
+    auto errs_filename = "errors_p_" + std::to_string(order) + "_" + base_filename;
+    auto field_filename = "field_p_" + std::to_string(order) + "_" + base_filename;
+
     // If you're wanting to use the library, this is the part you need to look at!
     // Warning: Check what the standard of your field of study is. Various
     // conventions apply for the sign with regards to dipole and quadrupole 
@@ -126,6 +143,7 @@ int main(int argc, const char **argv) {
       tree.compute_field_exact(F_exact.data());
       t_direct = timer.elapsed();
       std::cout << "t_direct = " << t_direct << std::endl;
+      timeout << "direct,"<<t_direct<<std::endl;
     }
     std::cout << "Order " << order << "\n-------" << std::endl;
 
@@ -142,7 +160,7 @@ int main(int argc, const char **argv) {
 	   tree.compute_field_bh(F_approx.data());
     }
     t_approx = timer.elapsed();
-
+    timeout << order << "," << t_approx << std::endl;
 
     // If direct calculation is enabled, check the error:
     if (!nodirect) {
@@ -150,12 +168,7 @@ int main(int argc, const char **argv) {
         double Eyrel_err = 0;
         double Ezrel_err = 0;
 
-        auto filename = "errors_lazy_p_" + std::to_string(order) +
-                               "_n_" + std::to_string(Nparticles) +
-                               "_ncrit_" + std::to_string(ncrit) +
-                               "_theta_" + std::to_string(theta) + 
-    			   "_type_" + std::to_string(type) + ".txt";
-        std::ofstream fout(filename);
+        std::ofstream errout(errs_filename);
 
         double errs[FMMGEN_OUTPUTSIZE] = {0.0};
         for (size_t i = 0; i < Nparticles; i++) {
@@ -164,12 +177,12 @@ int main(int argc, const char **argv) {
               fout << err << ",";
               errs[k] += std::abs(err);
           }
-          fout << std::endl;
+          errout << std::endl;
         }
 
         std::cerr << "Rel errs = " << std::scientific;
         for(int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
-            std::cerr << std::setw(10) << errs[k] / Nparticles << ",";
+            std::cerr << std::setw(16) << errs[k] / Nparticles << ",";
         }
         std::cout << std::endl;
     }
@@ -178,43 +191,15 @@ int main(int argc, const char **argv) {
 
     // If direct calculation enabled, print the field to a file for checking
     if (!nodirect) {
-	    std:: cout << std::setw(10) << t_approx / t_direct * 100 << "% of direct time."
-  	    << std::endl;
-        auto filename = "field_p_" + std::to_string(order) +
-                             "_n_" + std::to_string(Nparticles) +
-                             "_ncrit_" + std::to_string(ncrit) +
-                             "_theta_" + std::to_string(theta) + 
-             "_type_" + std::to_string(type) + ".txt";
-        std::ofstream fout(filename);
-
-        for (size_t i = 0; i < Nparticles; i++) {
-            for(int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
-              fout << F_exact[FMMGEN_OUTPUTSIZE * i + k] << "," << F_approx[FMMGEN_OUTPUTSIZE * i + k] << ",";
-            }
-          fout << std::endl;
-        }
+      std::ofstream fieldout(field_filename);
+      for (size_t i = 0; i < Nparticles; i++) {
+	for(int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
+	  fieldout << F_exact[FMMGEN_OUTPUTSIZE * i + k] << "," << F_approx[FMMGEN_OUTPUTSIZE * i + k] << ",";
+	}
+	fieldout << std::endl;
+      }
     }
-
-
-
-    
-
-
-
-
-
-
-  	
   }
-
-
-
-
-
-
-
-
-
   delete[] r;
   delete[] S;
   return 0;
