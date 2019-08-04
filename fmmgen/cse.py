@@ -68,6 +68,7 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=(), light_
                         # print(f'Skipping {expr}')
                         break
                 for ign in light_ignore:
+                    print('\t', ign, expr)
                     if str(ign) == str(expr):
                         break
                         

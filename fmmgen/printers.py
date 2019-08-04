@@ -33,9 +33,11 @@ class CCodePrinter(C99Base):
         c, e = expr.as_coeff_Mul()
 
         if c == 1.0:
-            return str(e)
+            expr = e
+            sign = ""
         elif e == 1.0:
-            return str(c)
+            expr = c
+            sign = ""
         
         elif c < 0:
             if c == -1.0:
