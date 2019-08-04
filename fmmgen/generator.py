@@ -154,9 +154,7 @@ def generate_derivs(order, symbols, M_dict, source_order=0, harmonic_derivs=Fals
     derivs = []
     for n in M_dict.keys():
         if n[2] > 1 and harmonic_derivs:
-            print(f'n = {n}')
             k = (n[0], n[1], n[2] - 2)
-            print(f'k = {k}')
             k1 = (k[0] + 2, k[1], k[2])
             k2 = (k[0], k[1] + 2, k[2])
             derivs.append(-D[M_dict[k1]] - D[M_dict[k2]])
