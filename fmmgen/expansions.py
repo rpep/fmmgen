@@ -128,7 +128,7 @@ def Phi_derivatives(n, symbols, harmonic=False):
         R = (dx**2 + dy**2 + dz**2)**(0.5)
         phi = 1/R
         deriv = sp.diff(phi, dx, n[0], dy, n[1], dz, n[2])
-        deriv = deriv.subs(R, 'R')
+        deriv = deriv.subs(1/R, 'Rinv')
         return deriv
     else:
         k = (n[0], n[1], n[2] - 2)

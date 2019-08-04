@@ -15,7 +15,7 @@ from sympy.simplify.cse_main import basic_optimizations, \
 from sympy.matrices import Matrix, ImmutableMatrix, ImmutableSparseMatrix, \
         MatrixBase, SparseMatrix
 
-def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=()):
+def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=(), light_ignore=()):
     """
     Perform raw CSE on expression tree, taking opt_subs into account.
 
@@ -66,6 +66,9 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=()):
                 for ign in ignore:
                     if str(ign) in [str(i) for i in expr.free_symbols]:
                         # print(f'Skipping {expr}')
+                        break
+                for ign in light_ignore:
+                    if str(ign) == str(expr):
                         break
                         
                 else:
@@ -157,7 +160,7 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=()):
 
 
 def cse(exprs, symbols=None, optimizations=None, postprocess=None,
-        order='canonical', ignore=()):
+        order='canonical', ignore=(), light_ignore=()):
     if isinstance(exprs, (Basic, MatrixBase)):
         exprs = [exprs]
 
@@ -193,7 +196,7 @@ def cse(exprs, symbols=None, optimizations=None, postprocess=None,
 
     # Main CSE algorithm.
     replacements, reduced_exprs = tree_cse(reduced_exprs, symbols, opt_subs,
-                                           order, ignore)
+                                           order, ignore, light_ignore)
 
     # Postprocess the expressions to return the expressions to canonical form.
     exprs = copy

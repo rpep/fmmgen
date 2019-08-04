@@ -256,12 +256,12 @@ def generate_M2P_operators(order, symbols, M_dict,
 
     V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, eval_derivs=True).subs('R', R)
     if potential:
-        terms.append(V.subs(R, 'R'))
+        terms.append(V.subs(1/R, 'Rinv'))
 
     if field:
-        Fx = -sp.diff(V, x).subs(R, 'R')
-        Fy = -sp.diff(V, y).subs(R, 'R')
-        Fz = -sp.diff(V, z).subs(R, 'R')
+        Fx = -sp.diff(V, x).subs(1/R, 'Rinv')
+        Fy = -sp.diff(V, y).subs(1/R, 'Rinv')
+        Fz = -sp.diff(V, z).subs(1/R, 'Rinv')
         terms.append(Fx)
         terms.append(Fy)
         terms.append(Fz)
@@ -339,12 +339,12 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
     terms = []
     # Note: R must be substituted late for correct derivatives!
     if potential:
-        terms.append(V.subs(R, 'R'))
+        terms.append(V.subs(1/R, 'Rinv'))
 
     if field:
-        Fx = -sp.diff(V, x).subs(R, 'R')
-        Fy = -sp.diff(V, y).subs(R, 'R')
-        Fz = -sp.diff(V, z).subs(R, 'R')
+        Fx = -sp.diff(V, x).subs(1/R, 'Rinv')
+        Fy = -sp.diff(V, y).subs(1/R, 'Rinv')
+        Fz = -sp.diff(V, z).subs(1/R, 'Rinv')
         terms.append(Fx)
         terms.append(Fy)
         terms.append(Fz)
