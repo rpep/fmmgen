@@ -233,6 +233,7 @@ class FunctionPrinter:
             code += f'{self.precision} {name}[{len(matrix)}];\n'
 
         if not self.debug:
+            # print('Printing with CSE')
             iterator = SymbolIterator(name)
             # print(f'ignoring {name} in cse')
             sub_expressions, rmatrix = cse(matrix, optimizations=opts,
@@ -250,6 +251,7 @@ class FunctionPrinter:
                                                                         operator)
 
         else:
+            # print('Printing without CSE')
             opscount += count_ops(matrix)
             tmp = self.printer.doprint(matrix, assign_to=name).replace('=',
                                                                        operator)
