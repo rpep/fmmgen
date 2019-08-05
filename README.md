@@ -17,7 +17,7 @@ elimination' (CSE) which reduces the number of operations which are performed in
 the compiled code. Compilers already offer this functionality, but only at
 higher levels of compiler optimisation is it turned on.
 
-The code writer can also output a Cython wrapper for this C code, which can be
+The code writer can also output a Cython wrapper for this C or C++ code, which can be
 used for quick testing of the operators.
 
 
@@ -43,10 +43,10 @@ order = 4
 module_name = "operators"
 
 # To get the unoptimized version of the code, generated without CSE:
-fmmgen.generate_code(order, module_name, generate_cython_wrapper=True, CSE=False)
+fmmgen.generate_code(order, module_name, cython=True, CSE=False)
 
 # Alternatively, for the optimised version:
-fmmgen.generate_code(order, module_name, generate_cython_wrapper=True, CSE=True)
+fmmgen.generate_code(order, module_name, cython=True, CSE=True)
 
 # When Cython generation is enabled, it is possible to use the operator functions
 # by importing them with pyximport:
@@ -55,7 +55,7 @@ pyximport.install()
 import operators_wrap as fmm
 ```
 
-Alternatively, after generating the code as above, the C code can be compiled and used directly (following instructions should work on Linux/MacOS):
+Alternatively, after generating the code as above, the generated C code can be compiled and used directly (following instructions should work on Linux/MacOS):
 
 ```
 // main.c
@@ -108,6 +108,7 @@ gcc operators.o main.o -o main
 ./main
 ```
 
+See the folder 'example' for a fully working, OpenMP Barnes-Hut and Fast Multipole Method code, built using the operators.
 
 ## Tests
 
