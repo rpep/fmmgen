@@ -2,7 +2,7 @@
 ![Python version](https://img.shields.io/badge/Python-%3E%3D%203.6-brightgreen.svg)
 
 This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
-It was written as part of the PhD research of Ryan Pepper.
+It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
 
 It consists of several parts:
 
@@ -11,11 +11,10 @@ Hand implementation of multipole formulae up to an arbitrary expansion order is
 non-trivial, and beyond 3rd order is a substantial effort.
 
 2) A code writer, which generates code from the expansion formulae. At present,
-this generates C code but in future, the option to generate Fortran functions
-will be added. The code makes use of something called 'common subexpression
+this generates C or C++ code but in future. The code makes use of something called 'common subexpression
 elimination' (CSE) which reduces the number of operations which are performed in
 the compiled code. Compilers already offer this functionality, but only at
-higher levels of compiler optimisation is it turned on.
+higher levels of compiler optimisation is it turned on. Other optimisations are also present, for example, utilising the  
 
 The code writer can also output a Cython wrapper for this C or C++ code, which can be
 used for quick testing of the operators.
@@ -55,68 +54,7 @@ pyximport.install()
 import operators_wrap as fmm
 ```
 
-Alternatively, after generating the code as above, the generated C code can be compiled and used directly (following instructions should work on Linux/MacOS):
-
-```
-// main.c
-#include "stdio.h"
-#include "stdlib.h"
-
-#include "operators.h"
-
-unsigned int Nterms(const unsigned int order) {
-  int nterms = 0;
-  for(unsigned int n = 0; n <= order; n++) {
-    nterms += (n*(n + 1)) / 2;
-  }
-  return nterms;
-}
-
-int main() {
-  // Expansion Order:
-  const unsigned int order = 2;
-  // Number of terms in expansion at order:
-  unsigned int N = Nterms(order);
-  // Single multipole array set to zero:
-
-  double *M = (double *) calloc(N, sizeof(double));
-
-  double x, y, z, q;
-  x = 1.1;
-  y = 2.4;
-  z = -1.2;
-  q = 1e-5;
-
-  // Calculate P2M expansion up to order
-  P2M(x, y, z, q, M, order);
-
-  for(unsigned int i = 0; i < N; i++) {
-    printf("M[%d] = %g\n", i, M[i]);
-  }
-
-
-  free(M);
-  return 0;
-}
-```
-
-To compile and run:
-```
-gcc -c operators.c
-gcc -c main.c
-gcc operators.o main.o -o main
-./main
-```
-
-See the folder 'example' for a fully working, OpenMP Barnes-Hut and Fast Multipole Method code, built using the operators.
-
-## Tests
-
-To run the tests, simply run from the project root directory:
-
-```
-make runtests
-```
+Alternatively, we suggest looking in the 'example' folder for a fully functioning OpenMP parallelised implementation of the FMM and Barnes-Hut methods using the code generated operators, which works for Coulomb, Dipole and higher order sources; all that needs to be done is change the 'source_order' parameter. By making other changes in the example.py file, one can enable or disable optimisations, which affects the run time significantly for some compilers. In general, we do not recommend the use of the GNU compiler, as in testing we find that the performance of the methods are significantly worse than when compiled with the Intel compiler. This has a side effect; we find that the symbolic algebra optimisations have less of an effect on the performance with the Intel compiler, which can factor expressions more effectively to avoid repeated computations than the GNU compiler at high optimisation levels.
 
 ## References
 
