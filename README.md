@@ -4,11 +4,13 @@
 This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
 It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
 
-It consists of several parts:
+The library is written in Python, and version 3.6. The package has few dependencies; the main one is the SymPy library. Some parts of the SymPy library are bundled within fmmgen due to changes needing to be made to the underlying methods for the purposes of this code. Accordingly, fmmgen is licensed under the 3-Clause BSD License.
 
-1) Symbolical algebraic generation of the operators.
-Hand implementation of multipole formulae up to an arbitrary expansion order is
-non-trivial, and beyond 3rd order is a substantial effort.
+fmmgen consists of several parts:
+
+1) Symbolical algebraic generation of the operators for fast multipole and Barnes-Hut codes in Cartesian Coordinates
+
+Hand implementation of multipole formulae up to an arbitrary expansion order is non-trivial, and beyond 3rd order is a substantial effort. In general, this leaves most Cartesian fast multipole and Barnes-Hut authors writing operator functions by hand, as can be seen from the 
 
 2) A code writer, which generates code from the expansion formulae. At present,
 this generates C or C++ code but in future. The code makes use of something called 'common subexpression
@@ -33,7 +35,7 @@ pip install .
 
 ## Example
 
-Then you can get started in using it to generate a C code version of the operators:
+Once the package is installed, you can get started in using it to generate a C code version of the operators:
 
 ```python
 import fmmgen
@@ -63,5 +65,9 @@ The code was developed with reference to the following academic papers.
 [1] Visscher, P. B., & Apalkov, D. M. (2010). Simple recursive implementation of fast multipole method. Journal of Magnetism and Magnetic Materials, 322(2), 275–281. https://doi.org/10.1016/j.jmmm.2009.09.033
 
 [2] Coles, J. P., & Masella, M. (2015). The fast multipole method and point dipole moment polarizable force fields. The Journal of Chemical Physics, 142(2), 24109. https://doi.org/10.1063/1.4904922
+
+[3] Beatson, R. and Greengard, L. (1997) A short course on fast multipole methods. In "Wavelets, Multilevel Methods and Elliptic PDEs", Oxford University Press, ISBN 0 19 850190 0
+
+In addition, I would also point anyone interested in the Fast Multipole Method to the [video tutorial series](https://www.youtube.com/playlist?list=PLpa6_YduENMF080NikNninGG-7e1hK1eQ) of Dr. Rio Yokota of the Tokyo Institute of Technology for an overview and short course developing the 2-D method in a step-by-step way.
 
 I would also like to thank J. P. Coles for useful discussions regarding the method and implementation.
