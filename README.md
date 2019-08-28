@@ -60,7 +60,7 @@ Alternatively, we suggest looking in the 'example' folder for a fully functionin
 
 ## References
 
-The code was developed with reference to the following academic papers.
+The code was developed with particular reference to the following academic papers.
 
 [1] Visscher, P. B., & Apalkov, D. M. (2010). Simple recursive implementation of fast multipole method. Journal of Magnetism and Magnetic Materials, 322(2), 275–281. https://doi.org/10.1016/j.jmmm.2009.09.033
 
