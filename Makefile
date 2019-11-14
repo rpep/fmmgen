@@ -4,15 +4,14 @@ all:
 	make ipython
 
 docker-all:
+  # docker-build also installs software in container
 	make docker-build
-	make docker-install
 	make docker-test
-	make docker-ipython
-	make docker-bash
+	@echo "Build, install and tests run. Looking good."
 
 
 install:
-	python3 -m pip install .
+	python3 -m pip install -e .
 
 test:
 	cd tests && py.test -v
@@ -26,17 +25,16 @@ ipython:
 docker-build:
 	docker build -t fmmgen -f Dockerfile .
 
-docker-install:
-	docker run -v `pwd`:/io fmmgen make install
-
 docker-test:
-	docker run -v `pwd`:/io fmmgen make test
+	docker run --rm -v `pwd`:/io fmmgen make test
 
+# for interactive exploration
 docker-ipython:
-	docker run -ti -v `pwd`:/io fmmgen ipython
+	docker run --rm -ti -v `pwd`:/io fmmgen ipython
 
+# for diagnostic purposes and convenience
 docker-bash:
-	docker run -ti -v `pwd`:/io fmmgen bash
+	docker run --rm -ti -v `pwd`:/io fmmgen bash
 
 
 clean:
