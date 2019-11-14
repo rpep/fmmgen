@@ -47,3 +47,11 @@ clean:
 	rm -rf *.egg-info
 	rm -rf __pycache__
 	rm -rf *~
+	rm -rf tests/LinearDipole.c
+	rm -rf tests/LinearDipole.h
+	rm -rf tests/LinearQuadrupole.c
+	rm -rf tests/LinearQuadrupole.h
+	rm -rf tests/MonopoleOrigin.c
+	rm -rf tests/MonopoleOrigin.h
+	rm -rf tests/QuadrupoleTwoDipoles.c
+	rm -rf tests/QuadrupoleTwoDipoles.h
