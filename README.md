@@ -1,10 +1,16 @@
 # fmmgen
 ![Python version](https://img.shields.io/badge/Python-%3E%3D%203.6-brightgreen.svg)
 
-This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
-It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
+This package generates Fast Multipole and Barnes-Hut operators for use in tree codes using automatic code generation.
 
-The library is written in Python, and version 3.6. The package has few dependencies; the main one is the SymPy library. Some parts of the SymPy library are bundled within fmmgen due to changes needing to be made to the underlying methods for the purposes of this code. Accordingly, fmmgen is licensed under the 3-Clause BSD License.
+It was written as part of the PhD research of Ryan Alexander Pepper at the
+University of Southampton, under supervision of Hans Fangohr.
+
+The library is written in Python (version 3.6). The package has few
+dependencies; the main one is the SymPy library. Some parts of the SymPy library
+are bundled within fmmgen due to changes needing to be made to the underlying
+methods for the purposes of this code. Accordingly, fmmgen is licensed under the
+3-Clause BSD License.
 
 fmmgen consists of several parts:
 
@@ -58,6 +64,12 @@ import operators_wrap as fmm
 
 Alternatively, we suggest looking in the 'example' folder for a fully functioning OpenMP parallelised implementation of the FMM and Barnes-Hut methods using the code generated operators, which works for Coulomb, Dipole and higher order sources; all that needs to be done is change the 'source_order' parameter. By making other changes in the example.py file, one can enable or disable optimisations, which affects the run time significantly for some compilers. In general, we do not recommend the use of the GNU compiler, as in testing we find that the performance of the methods are significantly worse than when compiled with the Intel compiler. This has a side effect; we find that the symbolic algebra optimisations have less of an effect on the performance with the Intel compiler, which can factor expressions more effectively to avoid repeated computations than the GNU compiler at high optimisation levels.
 
+## How to cite
+
+A paper describing the work is under preparation. For now, please cite as
+
+RA Pepper and H Fangohr, fmmgen, http://github.com/rpep/fmmgen (2019)
+
 ## References
 
 The code was developed with particular reference to the following academic papers.
@@ -69,5 +81,10 @@ The code was developed with particular reference to the following academic paper
 [3] Beatson, R. and Greengard, L. (1997) A short course on fast multipole methods. In "Wavelets, Multilevel Methods and Elliptic PDEs", Oxford University Press, ISBN 0 19 850190 0
 
 In addition, I would also point anyone interested in the Fast Multipole Method to the [video tutorial series](https://www.youtube.com/playlist?list=PLpa6_YduENMF080NikNninGG-7e1hK1eQ) of Dr. Rio Yokota of the Tokyo Institute of Technology for an overview and short course developing the 2-D method in a step-by-step way.
+
+## Acknowledgements
+
+This work was supported by the EPSRC Centre for Doctoral Training in Next
+Generation Computational Modelling (grant EP/L015382/1).
 
 I would also like to thank J. P. Coles for useful discussions regarding the method and implementation.
