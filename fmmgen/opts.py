@@ -1,6 +1,7 @@
 from sympy.simplify import powsimp
 from sympy.simplify.cse_opts import sub_pre, sub_post
 from sympy.core.exprtools import factor_terms
+from sympy.polys.polyfuncs import horner
 
 # By default, CSE can miss some obvious optimisations
 # due to how complex some of the expressions can be.
@@ -12,6 +13,8 @@ from sympy.core.exprtools import factor_terms
 
 # powsimp changes things like (x^2)^4 into x^8
 # ratsimp 
-basic = [(powsimp, None),
+basic = [
+    #(horner, None),
+         (powsimp, None),
          (sub_pre, sub_post),
          (factor_terms, None)]

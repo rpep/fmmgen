@@ -5,6 +5,8 @@ logger = logging.getLogger(name="fmmgen")
 import sympy as sp
 from fmmgen.cse import cse
 from fmmgen.opts import basic as opts
+from sympy import count_ops
+
 
 class CCodePrinter(C99Base):
     def __init__(self, settings={}, minpow=False):
@@ -89,6 +91,7 @@ class FunctionPrinter:
         assert self.precision in ['float', 'double']
 
     def _array(self, name, matrix, allocate=False, operator='=', atomic=False, ignore_symbols=[]):
+        opscount = 0
         code = ""
 
         if sp.symbols('R') in matrix.free_symbols:
@@ -100,17 +103,19 @@ class FunctionPrinter:
         if not self.debug:
             iterator = SymbolIterator(name)
             # print(f'ignoring {name} in cse')
-            sub_expressions, rRHS = cse(matrix, optimizations=opts, symbols=iterator, ignore=(ignore_symbols))
+            sub_expressions, rmatrix = cse(matrix, optimizations=opts, symbols=iterator, ignore=(ignore_symbols))
         
-            rRHS = sp.Matrix(rRHS)
+            rmatrix = sp.Matrix(rmatrix)
             for i, (var, sub_expr) in enumerate(sub_expressions):
+                opscount += count_ops(sub_expr)
                 code += f'{self.precision} ' + self.printer.doprint(sub_expr, assign_to=var) + "\n"
 
-
-            tmp = self.printer.doprint(rRHS, assign_to=name).replace('=',
-                                                                    operator)
+            opscount += count_ops(rmatrix)
+            tmp = self.printer.doprint(rmatrix, assign_to=name).replace('=',
+                                                                        operator)
 
         else:
+            opscount += count_ops(matrix)
             tmp = self.printer.doprint(matrix, assign_to=name).replace('=',
                                                                        operator)
 
@@ -121,21 +126,26 @@ class FunctionPrinter:
                 code += l + '\n'
         else:
             code += tmp + '\n'
-        return code
+        return code, opscount
 
 
 
 
     def _generate_body(self, LHS, RHS, internal=[], operator='=', atomic=False):
         # Find the reduced RHS equation.
+        opscount = 0
         logger.debug(f"Generating body for LHS = {str(LHS)}")
         code = ""
-
+        
         for arr_name, matrix in internal:
-            code += self._array(arr_name, matrix, allocate=True, ignore_symbols=[arr_name])
-
-        code += self._array(LHS, RHS, operator=operator, atomic=atomic)
-        return code
+            codetext, ops = self._array(arr_name, matrix, allocate=True, ignore_symbols=[arr_name])
+            code += codetext
+            opscount += ops
+            
+        codetext, ops = self._array(LHS, RHS, operator=operator, atomic=atomic)
+        code += codetext
+        opscount += ops
+        return code, opscount
 
 
     def _generate_header(self, name, LHS, RHS, inputs):
@@ -161,8 +171,9 @@ class FunctionPrinter:
     def generate(self, name, LHS, RHS, inputs, operator='=', atomic=False, internal=[]):
         header = self._generate_header(name, LHS, RHS, inputs)
         code = header + ' {\n'
-        code += self._generate_body(LHS, RHS, internal, operator, atomic=atomic)
+        codetext, opscount = self._generate_body(LHS, RHS, internal, operator, atomic=atomic)
+        code += codetext
         code += '\n}\n'
         header += ';\n'
 
-        return header, code
+        return header, code, opscount

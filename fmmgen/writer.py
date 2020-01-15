@@ -8,7 +8,7 @@ Created on Sat Feb  9 08:41:10 2019
 import os
 import subprocess
 import sympy as sp
-
+from sympy import count_ops
 # from sympy.printing.fcode import FCodePrinter
 from fmmgen.printers import *
 from fmmgen.utils import Nterms
@@ -20,7 +20,6 @@ from fmmgen.generator import generate_mappings, generate_M_operators, \
                   generate_L2P_operators, \
                   generate_M2P_operators, \
                   generate_P2P_operators, generate_derivs
-
 
 import logging
 logger = logging.getLogger(name="fmmgen")
@@ -37,7 +36,7 @@ def generate_code(order, name, precision='double',
                   include_dir=None, src_dir=None,
                   potential=True, field=True,
                   source_order=0, atomic=False,
-                  gpu=False, minpow=0, language='c'):
+                  gpu=False, minpow=0, language='c', save_opscounts=None):
     """
     Inputs:
 
@@ -77,7 +76,12 @@ def generate_code(order, name, precision='double',
         e.g. if a sympy expression is pow(x, 2) + pow(y, 6) and minpow is 5,
         the printed version will be x*x + pow(y, 6)
 
+    save_opcounts, string:
+        Filename to save opcounts in
     """
+    if save_opscounts:
+        f = open(save_opscounts, 'w')
+
     assert language in ['c', 'c++'], "Language must be 'c' or 'c++'"
     if language == 'c':
         fext = 'c'
@@ -106,103 +110,121 @@ def generate_code(order, name, precision='double',
 
 
     start = source_order
-    if field and not potential:
+    if field:
         # No point starting at source_order
         # because no field calculation can be done
         # at this multipole order - the L2P derivative
-        # is 0.
+        # is 0. This is true whether or not we
+        # calculate potential, so we always increment
+        # by 1 here the start order, such that the
+        # field is always calculated.
+        #
+        # It may be preferable to instead compute
+        # the field using a finite-difference approximation,
+        # or to enable this as a general option.
+        # However, this would be fairly sensitive, would
+        # require another user parameter (lengths over which
+        # to take the f.d. approximation), a decision on
+        # whether to use forward/backward/central differencing,
+        # and the order of the approximation. For now, we
+        # leave it as a simple symbolic derivative.
         start += 1
 
     for i in range(start, order):
-        logger.info(f"Generating order {i} operators")
+        print(f"Generating Order {i} operators")
         M_dict, _ = generate_mappings(i, symbols,'grevlex',  source_order=source_order)
         L_dict, _ = generate_mappings(i - source_order, symbols, 'grevlex', source_order=0)
 
 
-
         M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
-
-        # print(f"M = {M}")
-
-        head, code = p.generate(f'P2M_{i}', 'M', M,
+        
+        head, code, P2M_opscount = p.generate(f'P2M_{i}', 'M', M,
                                 coords + [q], operator='+=')
+        print(f"P2M_{i} opscount = {P2M_opscount}")
         header += head
         body += code
-
         Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
-
-        # print(f"Ms = {Ms}")
-
-        head, code = p.generate(f'M2M_{i}', 'Ms', Ms,
+        
+        head, code, M2M_opscount = p.generate(f'M2M_{i}', 'Ms', Ms,
                                 list(symbols) + \
                                 [sp.MatrixSymbol('M', Nterms(i), 1)],
                                 operator="+=", atomic=atomic)
         header += head
         body += code + '\n'
-
+        print(f"M2M_{i} opscount = {M2M_opscount}")
         # Two stages here; generate derivs and then the L matrix. Both
         # must be passed to the function printer.
         derivs = sp.Matrix(generate_derivs(i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs))
         L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict,
                       source_order=source_order))
 
-        head, code = p.generate(f'M2L_{i}', 'L', L,
+        head, code, M2L_opscount = p.generate(f'M2L_{i}', 'L', L,
                                list(symbols) +  \
                                [sp.MatrixSymbol('M', Nterms(i), 1)],
                                 operator="+=", atomic=atomic, internal=[('D', derivs)])
         header += head
         body += code + '\n'
-
+        print(f"M2L_{i} opscount = {M2L_opscount}")
 
         Ls = sp.Matrix(generate_L_shift_operators(i, symbols, L_dict, source_order=source_order))
-        head, code = p.generate(f'L2L_{i}', 'Ls', Ls,
+        head, code, L2L_opscount = p.generate(f'L2L_{i}', 'Ls', Ls,
                                list(symbols) + \
                                [sp.MatrixSymbol('L', Nterms(i), 1)],
                                 operator="+=", atomic=atomic)
 
         header += head
         body += code + '\n'
-
+        print(f"L2L_{i} opscount = {L2L_opscount}")
         L2P = generate_L2P_operators(i, symbols, L_dict,
-                                     potential=potential,
-                                     field=field)
-
+                                    potential=potential,
+                                    field=field)
+        
         Fs = sp.Matrix(L2P)
-        head, code = p.generate(f'L2P_{i}', 'F', Fs,
+        head, code, L2P_opscount = p.generate(f'L2P_{i}', 'F', Fs,
                                list(symbols) + \
                                [sp.MatrixSymbol('L', Nterms(i), 1)],
                                 operator="+=", atomic=atomic)
 
         header += head
         body += code + '\n'
-
+        print(f"L2P_{i} opscount = {L2P_opscount}")
         M2P = generate_M2P_operators(i, symbols, M_dict,
                                      potential=potential,
                                      field=field, source_order=source_order, harmonic_derivs=harmonic_derivs)
         Fs = sp.Matrix(M2P)
-        head, code = p.generate(f'M2P_{i}', 'F', Fs,
+        head, code, M2P_opscount = p.generate(f'M2P_{i}', 'F', Fs,
                                 list(symbols) + \
                                 [sp.MatrixSymbol('M', Nterms(i), 1)],
                                 operator="+=", atomic=atomic)
         header += head
         body += code + '\n'
-
+        print(f"M2P_{i} opscount = {M2P_opscount}")
         if i == start:
             P2P = sp.Matrix(generate_P2P_operators(symbols, M_dict,
                                                    potential=potential,
                                                    field=field,
                                                    source_order=source_order))
 
-            head, code = p.generate(f'P2P', 'F', P2P,
+            head, code, P2P_opscount = p.generate(f'P2P', 'F', P2P,
                                     list(symbols) + \
                                     [sp.MatrixSymbol('S', Nterms(i), 1)],
                                     operator="+=", atomic=atomic
                                     )
+            print(f"P2P opscount = {P2P_opscount}")
             header += head
             body += code + '\n'
 
-    # print("Here!")
-    # We now generate wrapper functions that cover all orders generated.
+        if save_opscounts:
+            if i == start:
+                f.write(f'P2P,{P2P_opscount}\n')
+            f.write(f'P2M_{i},{P2M_opscount}\n')
+            f.write(f'M2M_{i},{M2M_opscount}\n')
+            f.write(f'M2L_{i},{M2L_opscount}\n')
+            f.write(f'L2P_{i},{L2P_opscount}\n')
+            f.write(f'L2L_{i},{L2L_opscount}\n')
+            f.write(f'M2P_{i},{M2P_opscount}\n')
+
+# We now generate wrapper functions that cover all orders generated.
     unique_funcs = []
     func_definitions = header.split(';\n')
     # print(f"func_defs = {func_definitions}")

@@ -75,6 +75,7 @@ def M_shift(n, order, symbols, index_dict, source_order=0):
 
     return result
 
+
 def M_dipole(n, symbols, M_dict):
     x, y, z = symbols
     mux, muy, muz = sp.symbols('mux muy muz')
@@ -98,9 +99,6 @@ def M_dipole(n, symbols, M_dict):
     replacement_dict[y] = -y
     replacement_dict[z] = -z
     return term.subs(replacement_dict)
-
-
-
 
 
 @functools.lru_cache(maxsize=None)
