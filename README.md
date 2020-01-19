@@ -8,9 +8,7 @@ The library is written in Python, and version 3.6. The package has few dependenc
 
 fmmgen consists of several parts:
 
-1) Symbolical algebraic generation of the operators for fast multipole and Barnes-Hut codes in Cartesian Coordinates
-
-Hand implementation of multipole formulae up to an arbitrary expansion order is non-trivial, and beyond 3rd order is a substantial effort. In general, this leaves most Cartesian fast multipole and Barnes-Hut authors writing operator functions by hand, as can be seen from the 
+1) Symbolical algebraic generation of the operators for fast multipole and Barnes-Hut codes in Cartesian Coordinates. Hand implementation of multipole formulae up to an arbitrary expansion order is non-trivial, and beyond 3rd order is a substantial effort. In general, this leaves most Cartesian fast multipole and Barnes-Hut authors writing operator functions by hand, as can be seen from other similar packages.
 
 2) A code writer, which generates code from the expansion formulae. At present,
 this generates C or C++ code but in future. The code makes use of something called 'common subexpression
