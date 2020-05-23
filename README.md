@@ -1,5 +1,6 @@
 # fmmgen
 ![Python version](https://img.shields.io/badge/Python-%3E%3D%203.6-brightgreen.svg)
+![C++11 version](https://img.shields.io/badge/c%2B%2B-11-brightgreen)
 
 This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
 It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
