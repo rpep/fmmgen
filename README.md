@@ -39,19 +39,44 @@ Once the package is installed, you can get started in using it to generate a C c
 import fmmgen
 
 order = 4
+
+# This module name is used to label the source files, so 
+# with this, we get output of 'operators.c' and 'operators.h'
 module_name = "operators"
 
 # To get the unoptimized version of the code, generated without CSE:
 fmmgen.generate_code(order, module_name, cython=True, CSE=False)
 
-# Alternatively, for the optimised version:
+# Alternatively, for a more optimised version:
 fmmgen.generate_code(order, module_name, cython=True, CSE=True)
 
 # When Cython generation is enabled, it is possible to use the operator functions
-# by importing them with pyximport:
+# directly from Python by importing them with pyximport. These have the same 
+# API as the C code that is exported.
 import pyximport
 pyximport.install()
 import operators_wrap as fmm
+
+# To calculate the multipole moments of a charge q located at (0, 0, d)
+# about the origin, for example, you can use the following:
+
+d = 2.0
+q = 3.0
+# Position of the charge:
+r = np.array([0.0, 0.0, d])
+# Number of entries in a multipole array for a given order:
+Nterms = fmmgen.utils.Nterms(order)
+
+# Multipole input array:
+Q = np.zeros(Nterms)
+Q[0] = q
+# Multipole output array:
+M = np.zeros(Nterms(order))
+fmm.P2M(r, Q, M, order) 
+print(M)
+
+
+
 ```
 
 Alternatively, we suggest looking in the 'example' folder for a fully functioning OpenMP parallelised implementation of the FMM and Barnes-Hut methods using the code generated operators, which works for Coulomb, Dipole and higher order sources; all that needs to be done is change the 'source_order' parameter. By making other changes in the example.py file, one can enable or disable optimisations, which affects the run time significantly for some compilers. In general, we do not recommend the use of the GNU compiler, as in testing we find that the performance of the methods are significantly worse than when compiled with the Intel compiler. This has a side effect; we find that the symbolic algebra optimisations have less of an effect on the performance with the Intel compiler, which can factor expressions more effectively to avoid repeated computations than the GNU compiler at high optimisation levels.
