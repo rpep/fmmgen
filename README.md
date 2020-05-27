@@ -2,6 +2,7 @@
 ![Python version](https://img.shields.io/badge/Python-%3E%3D%203.6-brightgreen.svg)
 ![C++14 version](https://img.shields.io/badge/c%2B%2B-14-brightgreen)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3842591.svg)](https://doi.org/10.5281/zenodo.3842591)
+[![Arxiv Paper](https://img.shields.io/badge/arxiv-2005.12351-B31B1B)](https://arxiv.org/abs/2005.12351)
 
 This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
 It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
