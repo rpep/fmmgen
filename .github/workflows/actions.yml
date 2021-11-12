@@ -1,3 +1,7 @@
+on:
+  pull-request:
+  push:
+
 jobs:
   build:
     runs-on: ubuntu-latest
