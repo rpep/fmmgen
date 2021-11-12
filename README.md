@@ -3,21 +3,22 @@
 ![C++14 version](https://img.shields.io/badge/c%2B%2B-14-brightgreen)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3842591.svg)](https://doi.org/10.5281/zenodo.3842591)
 [![Arxiv Paper](https://img.shields.io/badge/arxiv-2005.12351-B31B1B)](https://arxiv.org/abs/2005.12351)
+[![.github/workflows/actions.yml](https://github.com/rpep/fmmgen/actions/workflows/actions.yml/badge.svg)](https://github.com/rpep/fmmgen/actions/workflows/actions.yml)
 
 This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
 It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
 
-The library is written in Python, and version 3.6. The package has few dependencies; the main one is the SymPy library. Some parts of the SymPy library are bundled within fmmgen due to changes needing to be made to the underlying methods for the purposes of this code. Accordingly, fmmgen is licensed under the 3-Clause BSD License.
+The library is written in Python, and requires at least version 3.6. The package has few dependencies; the main one is the SymPy library. Some parts of the SymPy library are bundled within fmmgen due to changes needing to be made to the underlying methods for the purposes of this code. Accordingly, fmmgen is licensed under the 3-Clause BSD License.
 
 fmmgen consists of several parts:
 
 1) Symbolical algebraic generation of the operators for fast multipole and Barnes-Hut codes in Cartesian Coordinates. Hand implementation of multipole formulae up to an arbitrary expansion order is non-trivial, and beyond 3rd order is a substantial effort. In general, this leaves most Cartesian fast multipole and Barnes-Hut authors writing operator functions by hand, as can be seen from other similar packages.
 
 2) A code writer, which generates code from the expansion formulae. At present,
-this generates C or C++ code but in future. The code makes use of something called 'common subexpression
+this generates C or C++ code but in future may be extended. The code makes use of something called 'common subexpression
 elimination' (CSE) which reduces the number of operations which are performed in
 the compiled code. Compilers already offer this functionality, but only at
-higher levels of compiler optimisation is it turned on. Other optimisations are also present, for example, utilising the  
+higher levels of compiler optimisation is it turned on. Other optimisations are also present.
 
 The code writer can also output a Cython wrapper for this C or C++ code, which can be
 used for quick testing of the operators.
@@ -30,6 +31,8 @@ To try out the module, first install it and the requirements:
 ```bash
 git clone https://github.com/rpep/fmmgen.git
 cd fmmgen
+virtualenv env
+source env/bin/activate
 pip install -r requirements.txt
 pip install .
 ```
@@ -127,3 +130,9 @@ The code was developed with particular reference to the following academic paper
 In addition, I would also point anyone interested in the Fast Multipole Method to the [video tutorial series](https://www.youtube.com/playlist?list=PLpa6_YduENMF080NikNninGG-7e1hK1eQ) of Dr. Rio Yokota of the Tokyo Institute of Technology for an overview and short course developing the 2-D method in a step-by-step way.
 
 I would also like to thank J. P. Coles for useful discussions regarding the method and implementation.
+
+## Citations
+
+The following papers have cited or used Fmmgen:
+
+[1] [Efficient Open-Source Implementations of Linear-Scaling Polarizable Embedding: Use Octrees to Save the Trees](https://doi.org/10.1021/acs.jctc.1c00225) M. Scheurer, P. Reinholdt, J. M. H. Olsen, A. Dreuw, J Kongsted, J. Chem. Theory Comput. 17, 6, 3445–3454 (2021)
