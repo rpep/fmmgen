@@ -23,4 +23,4 @@ jobs:
       - name: Tests
         run: poetry run pytest tests
       - name: Black
-        run: poetry run black .
+        run: poetry run flake8 fmmgen tests

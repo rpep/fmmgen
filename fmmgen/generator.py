@@ -1,81 +1,9 @@
 import sympy as sp
 from .expansions import M, M_shift, L, L_shift, phi_deriv, Phi_derivatives
-from sympy.polys.orderings import monomial_key
-from .utils import itermonomials, generate_mappings, Nterms
-from sympy.polys.monomials import itermonomials as sp_itermonomials
+from .utils import generate_mappings, Nterms
 import logging
 
 logger = logging.getLogger(name="fmmgen")
-
-
-def itermonomials(symbols, max_degree, min_degree=0):
-    monoms = list(sp_itermonomials(symbols, max_degree))
-    new_monoms = []
-    for monom in monoms:
-        monom_dict = monom.as_powers_dict()
-        order = 0
-        for symbol in symbols:
-            order += monom_dict[symbol]
-            if order >= min_degree:
-                new_monoms.append(monom)
-    return set(new_monoms)
-
-
-def generate_mappings(order, symbols, key="grevlex", source_order=0):
-    """
-    generate_mappings(order, symbols, key='grevlex'):
-
-    Generates a set of mappings between three-tuples of
-    indices denoting monomials and and array indices.
-    Returns both the forward and backward maps.
-
-    Inputs:
-    order: int
-        Maximum monomial order
-
-    symbols: list
-        List of sympy.Symbol type objects
-
-    source_order: int
-        Integer describing order of o
-
-    Returns:
-    dict:
-        Forward mapping from n-tuple to array index.
-
-    dict:
-        Reversed version; mapping from array index to
-        tuple mapping.
-
-    Example:
-    >>> x, y, z = sp.symbols('x y z')
-    >>> map, rmap = generate_mappings(1, [x, y, z])
-    >>> print(map):
-    {(0, 0, 0): 0, (1, 0, 0): 1, (0, 1, 0): 2, (0, 0, 1): 3}
-    >>> print(rmap):
-    {0: (0, 0, 0), 1: (1, 0, 0), 2: (0, 1, 0), 3: (0, 0, 1)}
-    """
-    if order < source_order:
-        raise ValueError(
-            "source_order must be <= order for meaningful calculations to occur"
-        )
-
-    x, y, z = symbols
-    rsymbols = [z, y, x]
-
-    monoms = itermonomials(symbols, order, source_order)
-    if key:
-        monom_key = monomial_key(key, rsymbols)
-        monoms = sorted(monoms, key=monom_key)
-
-    index_dict = {}
-    rindex_dict = {}
-    for i, monom in enumerate(monoms):
-        d = monom.as_powers_dict()
-        n = d[x], d[y], d[z]
-        index_dict[n] = i
-        rindex_dict[i] = n
-    return index_dict, rindex_dict
 
 
 def generate_M_operators(order, symbols, M_dict):
@@ -147,9 +75,7 @@ def generate_M_shift_operators(order, symbols, M_dict, source_order=0):
     x, y, z = symbols
     M_operators = []
     for n in M_dict.keys():
-        M_operators.append(
-            M_shift(n, order, symbols, M_dict, source_order=source_order)
-        )
+        M_operators.append(M_shift(n, order, symbols, M_dict, source_order=source_order))
     return M_operators
 
 
@@ -203,9 +129,7 @@ def generate_L_operators(order, symbols, M_dict, L_dict, source_order=0):
     x, y, z = symbols
     L_operators = []
     for n in L_dict.keys():
-        L_operators.append(
-            L(n, order, symbols, M_dict, source_order=source_order, eval_derivs=False)
-        )
+        L_operators.append(L(n, order, symbols, M_dict, source_order=source_order, eval_derivs=False))
 
     return L_operators
 
@@ -243,9 +167,7 @@ def generate_L_shift_operators(order, symbols, L_dict, source_order=0):
     x, y, z = symbols
     L_shift_operators = []
     for n in L_dict.keys():
-        L_shift_operators.append(
-            L_shift(n, order, symbols, L_dict, source_order=source_order)
-        )
+        L_shift_operators.append(L_shift(n, order, symbols, L_dict, source_order=source_order))
     return L_shift_operators
 
 
@@ -269,9 +191,7 @@ def generate_M2P_operators(
 
     terms = []
 
-    V = L(
-        (0, 0, 0), order, symbols, M_dict, source_order=source_order, eval_derivs=True
-    ).subs("R", R)
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, eval_derivs=True).subs("R", R)
     if potential:
         terms.append(V.subs(1 / R, "Rinv"))
 
@@ -336,15 +256,11 @@ def generate_L2P_operators(order, symbols, L_dict, potential=True, field=True):
 
 def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_order=0):
     order = source_order
-    M_dict, _ = generate_mappings(
-        source_order, symbols, "grevlex", source_order=source_order
-    )
+    M_dict, _ = generate_mappings(source_order, symbols, "grevlex", source_order=source_order)
     x, y, z = sp.symbols("x y z")
     R = (x**2 + y**2 + z**2) ** 0.5
 
-    S_map, _ = generate_mappings(
-        source_order, [x, y, z], key="grevlex", source_order=source_order
-    )
+    S_map, _ = generate_mappings(source_order, [x, y, z], key="grevlex", source_order=source_order)
     # print('S_map = {}'.format(S_map))
 
     M = sp.MatrixSymbol("M", Nterms(order), 1)
@@ -355,11 +271,7 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
     for key in S_map.keys():
         subsdict[M[M_dict[key]]] = S[M_dict[key]]
 
-    V = (
-        L((0, 0, 0), order, symbols, M_dict, source_order=source_order)
-        .subs("R", R)
-        .subs(subsdict)
-    )
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order).subs("R", R).subs(subsdict)
 
     terms = []
     # Note: R must be substituted late for correct derivatives!

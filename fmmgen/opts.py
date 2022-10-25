@@ -1,7 +1,6 @@
 from sympy.simplify import powsimp
 from sympy.simplify.cse_opts import sub_pre, sub_post
 from sympy.core.exprtools import factor_terms
-from sympy.polys.polyfuncs import horner
 
 # By default, CSE can miss some obvious optimisations
 # due to how complex some of the expressions can be.

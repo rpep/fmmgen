@@ -24,9 +24,7 @@ from sympy.matrices import (
 )
 
 
-def tree_cse(
-    exprs, symbols, opt_subs=None, order="canonical", ignore=(), light_ignore=()
-):
+def tree_cse(exprs, symbols, opt_subs=None, order="canonical", ignore=(), light_ignore=()):
     """
     Perform raw CSE on expression tree, taking opt_subs into account.
 
@@ -60,10 +58,7 @@ def tree_cse(
             return
 
         if isinstance(expr, Basic) and (
-            expr.is_Atom
-            or expr.is_Order
-            or isinstance(expr, MatrixSymbol)
-            or isinstance(expr, MatrixElement)
+            expr.is_Atom or expr.is_Order or isinstance(expr, MatrixSymbol) or isinstance(expr, MatrixElement)
         ):
 
             if expr.is_Symbol:
@@ -216,9 +211,7 @@ def cse(
     opt_subs = opt_cse(reduced_exprs, order)
 
     # Main CSE algorithm.
-    replacements, reduced_exprs = tree_cse(
-        reduced_exprs, symbols, opt_subs, order, ignore, light_ignore
-    )
+    replacements, reduced_exprs = tree_cse(reduced_exprs, symbols, opt_subs, order, ignore, light_ignore)
 
     # Postprocess the expressions to return the expressions to canonical form.
     exprs = copy

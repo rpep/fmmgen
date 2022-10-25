@@ -1,14 +1,16 @@
 from sympy.printing.c import C99CodePrinter as C99Base
 from sympy.printing.cxx import CXX11CodePrinter as CXX11Base
 import logging
-
-logger = logging.getLogger(name="fmmgen")
 import sympy as sp
+from sympy import Mul, S, Pow
 from fmmgen.cse import cse
 from fmmgen.opts import basic as opts
 from sympy import count_ops
 from sympy.printing.precedence import precedence
 from sympy.core.mul import _keep_coeff
+
+
+logger = logging.getLogger(name="fmmgen")
 
 
 class CCodePrinter(C99Base):
@@ -19,18 +21,10 @@ class CCodePrinter(C99Base):
     def _print_Pow(self, expr):
         if self.minpow:
             if expr.exp.is_integer and expr.exp > 0 and expr.exp <= self.minpow:
-                return (
-                    "("
-                    + "*".join([self._print(expr.base) for i in range(expr.exp)])
-                    + ")"
-                )
+                return "(" + "*".join([self._print(expr.base) for i in range(expr.exp)]) + ")"
 
             elif expr.exp.is_integer and expr.exp < 0 and expr.exp >= -self.minpow:
-                expr = (
-                    "(1 / ("
-                    + "*".join([self._print(expr.base) for i in range(abs(expr.exp))])
-                    + "))"
-                )
+                expr = "(1 / (" + "*".join([self._print(expr.base) for i in range(abs(expr.exp))]) + "))"
                 return expr
             else:
                 return super()._print_Pow(expr)
@@ -64,9 +58,7 @@ class CCodePrinter(C99Base):
         a = []  # items in the numerator
         b = []  # items that are in the denominator (if any)
 
-        pow_paren = (
-            []
-        )  # Will collect all pow with more than one base element and exp = -1
+        pow_paren = []  # Will collect all pow with more than one base element and exp = -1
 
         if self.order not in ("old", "none"):
             args = expr.as_ordered_factors()
@@ -76,18 +68,11 @@ class CCodePrinter(C99Base):
 
         # Gather args for numerator/denominator
         for item in args:
-            if (
-                item.is_commutative
-                and item.is_Pow
-                and item.exp.is_Rational
-                and item.exp.is_negative
-            ):
+            if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
                 if item.exp != -1:
                     b.append(Pow(item.base, -item.exp, evaluate=False))
                 else:
-                    if len(item.args[0].args) != 1 and isinstance(
-                        item.base, Mul
-                    ):  # To avoid situations like #14160
+                    if len(item.args[0].args) != 1 and isinstance(item.base, Mul):  # To avoid situations like #14160
                         pow_paren.append(item)
                     b.append(Pow(item.base, -item.exp))
             else:
@@ -119,18 +104,10 @@ class CXXCodePrinter(CXX11Base):
     def _print_Pow(self, expr):
         if self.minpow:
             if expr.exp.is_integer and expr.exp > 0 and expr.exp <= self.minpow:
-                return (
-                    "("
-                    + "*".join([self._print(expr.base) for i in range(expr.exp)])
-                    + ")"
-                )
+                return "(" + "*".join([self._print(expr.base) for i in range(expr.exp)]) + ")"
 
             elif expr.exp.is_integer and expr.exp < 0 and expr.exp >= -self.minpow:
-                expr = (
-                    "(1 / ("
-                    + "*".join([self._print(expr.base) for i in range(abs(expr.exp))])
-                    + "))"
-                )
+                expr = "(1 / (" + "*".join([self._print(expr.base) for i in range(abs(expr.exp))]) + "))"
                 return expr
             else:
                 return super()._print_Pow(expr)
@@ -155,9 +132,7 @@ class CXXCodePrinter(CXX11Base):
         a = []  # items in the numerator
         b = []  # items that are in the denominator (if any)
 
-        pow_paren = (
-            []
-        )  # Will collect all pow with more than one base element and exp = -1
+        pow_paren = []  # Will collect all pow with more than one base element and exp = -1
 
         if self.order not in ("old", "none"):
             args = expr.as_ordered_factors()
@@ -167,18 +142,11 @@ class CXXCodePrinter(CXX11Base):
 
         # Gather args for numerator/denominator
         for item in args:
-            if (
-                item.is_commutative
-                and item.is_Pow
-                and item.exp.is_Rational
-                and item.exp.is_negative
-            ):
+            if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
                 if item.exp != -1:
                     b.append(Pow(item.base, -item.exp, evaluate=False))
                 else:
-                    if len(item.args[0].args) != 1 and isinstance(
-                        item.base, Mul
-                    ):  # To avoid situations like #14160
+                    if len(item.args[0].args) != 1 and isinstance(item.base, Mul):  # To avoid situations like #14160
                         pow_paren.append(item)
                     b.append(Pow(item.base, -item.exp))
             else:
@@ -223,19 +191,17 @@ class SymbolIterator:
 
 
 class FunctionPrinter:
-    def __init__(
-        self, language="c", precision="double", debug=True, gpu=False, minpow=False
-    ):
+    def __init__(self, language="c", precision="double", debug=True, gpu=False, minpow=False):
         logger.info(f'Function Printer created with precision "{precision}"')
 
         self.gpu = gpu
         if self.gpu:
-            logger.info(f"Writing CUDA __device__ functions is enabled")
+            logger.info("Writing CUDA __device__ functions is enabled")
 
         if not debug:
-            logger.info(f"CSE is enabled")
+            logger.info("CSE is enabled")
         else:
-            logger.info(f"CSE is disabled")
+            logger.info("CSE is disabled")
         self.debug = debug
 
         try:
@@ -292,11 +258,7 @@ class FunctionPrinter:
             rmatrix = sp.Matrix(rmatrix)
             for i, (var, sub_expr) in enumerate(sub_expressions):
                 opscount += count_ops(sub_expr)
-                code += (
-                    f"{self.precision} "
-                    + self.printer.doprint(sub_expr, assign_to=var)
-                    + "\n"
-                )
+                code += f"{self.precision} " + self.printer.doprint(sub_expr, assign_to=var) + "\n"
 
             opscount += count_ops(rmatrix)
             tmp = self.printer.doprint(rmatrix, assign_to=name).replace("=", operator)
@@ -308,25 +270,21 @@ class FunctionPrinter:
 
         if atomic:
             lines = tmp.split("\n")
-            for l in lines:
+            for line in lines:
                 code += "#pragma omp atomic\n"
-                code += l + "\n"
+                code += line + "\n"
         else:
             code += tmp + "\n"
         return code, opscount
 
-    def _generate_body(
-        self, LHS, RHS, internal=[], operator="=", atomic=False, ignore=[]
-    ):
+    def _generate_body(self, LHS, RHS, internal=[], operator="=", atomic=False, ignore=[]):
         # Find the reduced RHS equation.
         opscount = 0
         logger.debug(f"Generating body for LHS = {str(LHS)}")
         code = ""
 
         for arr_name, matrix in internal:
-            codetext, ops = self._array(
-                arr_name, matrix, allocate=True, ignore_symbols=[arr_name] + ignore
-            )
+            codetext, ops = self._array(arr_name, matrix, allocate=True, ignore_symbols=[arr_name] + ignore)
             code += codetext
             opscount += ops
 
@@ -347,23 +305,17 @@ class FunctionPrinter:
         inputs.append(LHS)
         types.append(self.precision + " *")
 
-        combined_inputs = ", ".join(
-            [str(x) + " " + str(y) for x, y in zip(types, inputs)]
-        )
+        combined_inputs = ", ".join([str(x) + " " + str(y) for x, y in zip(types, inputs)])
 
         if self.gpu:
             return "__device__ void {}({})".format(name, combined_inputs)
         else:
             return "void {}({})".format(name, combined_inputs)
 
-    def generate(
-        self, name, LHS, RHS, inputs, operator="=", atomic=False, internal=[], ignore=[]
-    ):
+    def generate(self, name, LHS, RHS, inputs, operator="=", atomic=False, internal=[], ignore=[]):
         header = self._generate_header(name, LHS, RHS, inputs)
         code = header + " {\n"
-        codetext, opscount = self._generate_body(
-            LHS, RHS, internal, operator, atomic=atomic, ignore=ignore
-        )
+        codetext, opscount = self._generate_body(LHS, RHS, internal, operator, atomic=atomic, ignore=ignore)
         code += codetext
         code += "\n}\n"
         header += ";\n"

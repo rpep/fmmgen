@@ -5,16 +5,10 @@ Created on Sat Feb  9 08:41:10 2019
 
 @author: ryan
 """
-import os
-import subprocess
 import sympy as sp
-from sympy import count_ops
-
-# from sympy.printing.fcode import FCodePrinter
-from fmmgen.printers import *
+from fmmgen.printers import FunctionPrinter
 from fmmgen.utils import Nterms
 import textwrap
-from fmmgen.cse import cse
 from fmmgen.generator import (
     generate_mappings,
     generate_M_operators,
@@ -111,10 +105,10 @@ def generate_code(
     assert precision in ["double", "float"], "Precision must be float or double"
     logger.info(f"Precision = {precision}")
     if CSE:
-        logger.info(f"CSE Enabled")
+        logger.info("CSE Enabled")
         p = FunctionPrinter(precision=precision, debug=False, minpow=minpow)
     else:
-        logger.info(f"CSE Disabled")
+        logger.info("CSE Disabled")
         p = FunctionPrinter(precision=precision, debug=True, minpow=minpow)
 
     header = ""
@@ -148,21 +142,15 @@ def generate_code(
     for i in range(start, order):
         print(f"Generating Order {i} operators")
         M_dict, _ = generate_mappings(i, symbols, "grevlex", source_order=source_order)
-        L_dict, _ = generate_mappings(
-            i - source_order, symbols, "grevlex", source_order=0
-        )
+        L_dict, _ = generate_mappings(i - source_order, symbols, "grevlex", source_order=0)
 
         M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
 
-        head, code, P2M_opscount = p.generate(
-            f"P2M_{i}", "M", M, coords + [q], operator="+="
-        )
+        head, code, P2M_opscount = p.generate(f"P2M_{i}", "M", M, coords + [q], operator="+=")
         print(f"P2M_{i} opscount = {P2M_opscount}")
         header += head
         body += code
-        Ms = sp.Matrix(
-            generate_M_shift_operators(i, symbols, M_dict, source_order=source_order)
-        )
+        Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
 
         head, code, M2M_opscount = p.generate(
             f"M2M_{i}",
@@ -177,14 +165,8 @@ def generate_code(
         print(f"M2M_{i} opscount = {M2M_opscount}")
         # Two stages here; generate derivs and then the L matrix. Both
         # must be passed to the function printer.
-        derivs = sp.Matrix(
-            generate_derivs(
-                i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs
-            )
-        )
-        L = sp.Matrix(
-            generate_L_operators(i, symbols, M_dict, L_dict, source_order=source_order)
-        )
+        derivs = sp.Matrix(generate_derivs(i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs))
+        L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict, source_order=source_order))
 
         head, code, M2L_opscount = p.generate(
             f"M2L_{i}",
@@ -199,9 +181,7 @@ def generate_code(
         body += code + "\n"
         print(f"M2L_{i} opscount = {M2L_opscount}")
 
-        Ls = sp.Matrix(
-            generate_L_shift_operators(i, symbols, L_dict, source_order=source_order)
-        )
+        Ls = sp.Matrix(generate_L_shift_operators(i, symbols, L_dict, source_order=source_order))
         head, code, L2L_opscount = p.generate(
             f"L2L_{i}",
             "Ls",
@@ -214,9 +194,7 @@ def generate_code(
         header += head
         body += code + "\n"
         print(f"L2L_{i} opscount = {L2L_opscount}")
-        L2P = generate_L2P_operators(
-            i, symbols, L_dict, potential=potential, field=field
-        )
+        L2P = generate_L2P_operators(i, symbols, L_dict, potential=potential, field=field)
 
         Fs = sp.Matrix(L2P)
         head, code, L2P_opscount = p.generate(
@@ -264,7 +242,7 @@ def generate_code(
             )
 
             head, code, P2P_opscount = p.generate(
-                f"P2P",
+                "P2P",
                 "F",
                 P2P,
                 list(symbols) + [sp.MatrixSymbol("S", Nterms(i), 1)],
@@ -295,7 +273,7 @@ def generate_code(
         function_name = func.split("(")[0]
         # print(f"Function_name = {function_name}")
         end_string = f"_{start}"
-        if end_string == function_name[-len(end_string) :]:
+        if end_string == function_name[-len(end_string):]:
             # print("Unique!")
             unique_funcs.append(func)
         else:
@@ -303,9 +281,7 @@ def generate_code(
             # print(f"{func} not unique")
             # print(f"  {end_string}  {function_name[-len(end_string)-1:]}")
 
-    wrapper_funcs = [
-        f.replace(")", ", int order)").replace(f"_{start}", "") for f in unique_funcs
-    ]
+    wrapper_funcs = [f.replace(")", ", int order)").replace(f"_{start}", "") for f in unique_funcs]
 
     #  print(wrapper_funcs)
 
@@ -338,13 +314,11 @@ def generate_code(
         f = open(f"{name}.{hext}", "w")
     else:
         f = open(f"{include_dir.rstrip('/')}/{name}.{hext}", "w")
-    f.write(f"#pragma once\n")
+    f.write("#pragma once\n")
     f.write(f"#define FMMGEN_MINORDER {start}\n")
     f.write(f"#define FMMGEN_MAXORDER {order}\n")
     f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
-    f.write(
-        f"#define FMMGEN_SOURCESIZE {Nterms(source_order) - Nterms(source_order - 1)}\n"
-    )
+    f.write(f"#define FMMGEN_SOURCESIZE {Nterms(source_order) - Nterms(source_order - 1)}\n")
     if potential and not field:
         osize = 1
     elif field and not potential:
@@ -362,9 +336,9 @@ def generate_code(
 
     f.write(f'#include "{name}.{hext}"\n')
     if language == "c":
-        f.write(f'#include "math.h"\n')
+        f.write('#include "math.h"\n')
     elif language == "c++":
-        f.write(f"#include<cmath>\n")
+        f.write("#include<cmath>\n")
 
     f.write(body)
     f.close()
@@ -429,15 +403,7 @@ def generate_code(
                     arg = arg.replace("* ", "&") + "[0]"
                 processed_args.append(arg.split(" ")[-1])
 
-            pyxcode += (
-                "    "
-                + name
-                + "_decl."
-                + function_name
-                + "("
-                + ", ".join(processed_args)
-                + ")\n\n"
-            )
+            pyxcode += "    " + name + "_decl." + function_name + "(" + ", ".join(processed_args) + ")\n\n"
 
         f.write(pyxcode)
         f.close()

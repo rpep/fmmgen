@@ -1,7 +1,6 @@
 import sympy as sp
-from sympy.polys.orderings import monomial_key
 from sympy import factorial
-from sympy import itermonomials, binomial
+from sympy import binomial
 from .utils import q, Nterms, generate_mappings
 import functools
 import logging
@@ -70,12 +69,7 @@ def M_shift(n, order, symbols, index_dict, source_order=0):
     result = sp.Integer(0)
     for i, k in enumerate(monoms.keys()):
         nmink = n[0] - k[0], n[1] - k[1], n[2] - k[2]
-        if (
-            nmink[0] >= 0
-            and nmink[1] >= 0
-            and nmink[2] >= 0
-            and sum(nmink) >= source_order
-        ):
+        if nmink[0] >= 0 and nmink[1] >= 0 and nmink[2] >= 0 and sum(nmink) >= source_order:
             array_index = index_dict[nmink]
             M = sp.MatrixSymbol("M", Nterms(order), 1)[array_index]
             sum_term = M * x ** k[0] * y ** k[1] * z ** k[2] / fact(k)
@@ -144,9 +138,7 @@ def Phi_derivatives(n, symbols, harmonic=False):
         k = (n[0], n[1], n[2] - 2)
         k1 = (k[0] + 2, k[1], k[2])
         k2 = (k[0], k[1] + 2, k[2])
-        return -(Phi_derivatives(k1, symbols, harmonic=harmonic)) - (
-            Phi_derivatives(k2, symbols, harmonic=harmonic)
-        )
+        return -(Phi_derivatives(k1, symbols, harmonic=harmonic)) - (Phi_derivatives(k2, symbols, harmonic=harmonic))
 
 
 def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
@@ -154,9 +146,7 @@ def L(n, order, symbols, M_dict, eval_derivs=True, source_order=0):
 
     # print(sum(n), order - source_order)
 
-    assert (
-        sum(n) <= order - source_order
-    ), "Terms are zero if sum(n) < order - source_order"
+    assert sum(n) <= order - source_order, "Terms are zero if sum(n) < order - source_order"
 
     dx, dy, dz = symbols
     modn = sum(n)
@@ -197,12 +187,7 @@ def L_shift(n, order, symbols, L_dict, source_order=0):
         npk = n[0] + k[0], n[1] + k[1], n[2] + k[2]
         # print(f"  k = {k}, npk = {npk}")
 
-        if (
-            npk[0] >= 0
-            and npk[1] >= 0
-            and npk[2] >= 0
-            and sum(npk) <= order - source_order
-        ):
+        if npk[0] >= 0 and npk[1] >= 0 and npk[2] >= 0 and sum(npk) <= order - source_order:
             L = sp.MatrixSymbol("L", Nterms(order), 1)[L_dict[npk]]
             sum_term = L * x ** k[0] * y ** k[1] * z ** k[2] / fact(k)
             result += sum_term
