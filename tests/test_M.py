@@ -1,6 +1,6 @@
 import fmmgen.generator as gen
 import fmmgen.expansions as exp
-from fmmgen.utils import q, Nterms
+from fmmgen.utils import q
 import sympy as sp
 
 x, y, z = sp.symbols("x y z")
@@ -10,9 +10,7 @@ symbols = (x, y, z)
 def test_M_monopole():
     order = 2
     source = 0
-    array_length = Nterms(order) - Nterms(source - 1)
 
-    M = sp.MatrixSymbol("M", array_length, 1)
     M_dict, _ = gen.generate_mappings(
         order, symbols, key="grevlex", source_order=source
     )
@@ -30,9 +28,6 @@ def test_M_dipole():
     M_dict, _ = gen.generate_mappings(
         order, symbols, key="grevlex", source_order=source
     )
-
-    array_length = Nterms(order) - Nterms(source - 1)
-    M = sp.MatrixSymbol("M", array_length, 1)
 
     mux, muy, muz = sp.symbols("mux muy muz")
 

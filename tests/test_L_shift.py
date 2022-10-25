@@ -1,6 +1,6 @@
 import fmmgen.generator as gen
 import fmmgen.expansions as exp
-from fmmgen.utils import q, Nterms
+from fmmgen.utils import Nterms
 import sympy as sp
 
 x, y, z, R = sp.symbols("x y z R")
@@ -10,7 +10,6 @@ symbols = (x, y, z)
 def test_L_shift_0_order_monopole_source():
     order = 0
     source = 0
-    array_length = Nterms(order) - Nterms(source - 1)
 
     L = sp.MatrixSymbol("L", Nterms(order), 1)
     M_dict, _ = gen.generate_mappings(
@@ -29,7 +28,6 @@ def test_L_shift_0_order_monopole_source():
 def test_L_shift_1_order_monopole_source():
     order = 1
     source = 0
-    array_length = Nterms(order) - Nterms(source - 1)
 
     L = sp.MatrixSymbol("L", Nterms(order), 1)
     M_dict, _ = gen.generate_mappings(
@@ -54,7 +52,6 @@ def test_L_shift_1_order_monopole_source():
 def test_L_shift_1_order_dipole_source():
     order = 1
     source = 1
-    array_length = Nterms(order) - Nterms(source - 1)
 
     L = sp.MatrixSymbol("L", Nterms(order), 1)
     M_dict, _ = gen.generate_mappings(
