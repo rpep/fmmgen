@@ -30,5 +30,5 @@ setup(
         "Operating System :: MacOS"
         ],
     install_requires = ["cython", "pytest", "sympy", "numpy"],
-    python_requires=">= 3.6",
+    python_requires=">= 3.10",
 )

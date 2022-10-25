@@ -2,11 +2,10 @@
 Patched version of tools from SymPy which handle matrices correctly.
 """
 from __future__ import print_function, division
-
+from sympy import numbered_symbols, ordered
+from sympy.utilities.iterables import iterable
 from sympy.core import Basic, Mul, Add, Symbol
 from sympy.core.containers import Tuple
-from sympy.core.compatibility import iterable
-from sympy.utilities.iterables import numbered_symbols, ordered
 from sympy.matrices.expressions import MatrixExpr, MatrixSymbol, MatMul, MatAdd
 from sympy.matrices.expressions.matexpr import MatrixElement
 from sympy.simplify.cse_main import basic_optimizations, \
@@ -169,7 +168,7 @@ def cse(exprs, symbols=None, optimizations=None, postprocess=None,
     temp = []
     for e in exprs:
         if isinstance(e, (Matrix, ImmutableMatrix)):
-            temp.append(Tuple(*e._mat))
+            temp.append(Tuple(*e.flat()))
         elif isinstance(e, (SparseMatrix, ImmutableSparseMatrix)):
             temp.append(Tuple(*e._smat.items()))
         else:
