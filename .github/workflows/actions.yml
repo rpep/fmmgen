@@ -19,7 +19,7 @@ jobs:
       - name: Install poetry
         run: pip install poetry
       - name: Install package and dependencies
-        run: poetry config virtualenvs.create false
+        run: poetry config virtualenvs.create false && poetry install
       - name: Tests
         run: poetry run pytest
       - name: Black
