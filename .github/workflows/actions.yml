@@ -16,9 +16,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Install fmmgen
-        run: pip install .
+      - name: Install poetry
+        run: pip install poetry
+      - name: Install package and dependencies
+        run: poetry config virtualenvs.create false && poetry install
       - name: Tests
-        run: cd tests && py.test
+        run: poetry run pytest tests
+      - name: Black
+        run: poetry run flake8 fmmgen tests

@@ -8,13 +8,23 @@ from sympy.core import Basic, Mul, Add, Symbol
 from sympy.core.containers import Tuple
 from sympy.matrices.expressions import MatrixExpr, MatrixSymbol, MatMul, MatAdd
 from sympy.matrices.expressions.matexpr import MatrixElement
-from sympy.simplify.cse_main import basic_optimizations, \
-    preprocess_for_cse, postprocess_for_cse, \
-    Unevaluated, opt_cse
-from sympy.matrices import Matrix, ImmutableMatrix, ImmutableSparseMatrix, \
-        MatrixBase, SparseMatrix
+from sympy.simplify.cse_main import (
+    basic_optimizations,
+    preprocess_for_cse,
+    postprocess_for_cse,
+    Unevaluated,
+    opt_cse,
+)
+from sympy.matrices import (
+    Matrix,
+    ImmutableMatrix,
+    ImmutableSparseMatrix,
+    MatrixBase,
+    SparseMatrix,
+)
 
-def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=(), light_ignore=()):
+
+def tree_cse(exprs, symbols, opt_subs=None, order="canonical", ignore=(), light_ignore=()):
     """
     Perform raw CSE on expression tree, taking opt_subs into account.
 
@@ -47,10 +57,9 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=(), light_
         if not isinstance(expr, (Basic, Unevaluated)):
             return
 
-        if isinstance(expr, Basic) and (expr.is_Atom or \
-                                        expr.is_Order or \
-                                        isinstance(expr, MatrixSymbol) or \
-                                        isinstance(expr, MatrixElement)):
+        if isinstance(expr, Basic) and (
+            expr.is_Atom or expr.is_Order or isinstance(expr, MatrixSymbol) or isinstance(expr, MatrixElement)
+        ):
 
             if expr.is_Symbol:
                 excluded_symbols.add(expr)
@@ -67,10 +76,10 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=(), light_
                         # print(f'Skipping {expr}')
                         break
                 for ign in light_ignore:
-                    print('\t', ign, expr)
+                    print("\t", ign, expr)
                     if str(ign) == str(expr):
                         break
-                        
+
                 else:
                     to_eliminate.add(expr)
                     return
@@ -114,7 +123,7 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=(), light_
 
         # If enabled, parse Muls and Adds arguments by order to ensure
         # replacement order independent from hashes
-        if order != 'none':
+        if order != "none":
             if isinstance(expr, (Mul, MatMul)):
                 c, nc = expr.args_cnc()
                 if c == [1]:
@@ -159,8 +168,15 @@ def tree_cse(exprs, symbols, opt_subs=None, order='canonical', ignore=(), light_
     return replacements, reduced_exprs
 
 
-def cse(exprs, symbols=None, optimizations=None, postprocess=None,
-        order='canonical', ignore=(), light_ignore=()):
+def cse(
+    exprs,
+    symbols=None,
+    optimizations=None,
+    postprocess=None,
+    order="canonical",
+    ignore=(),
+    light_ignore=(),
+):
     if isinstance(exprs, (Basic, MatrixBase)):
         exprs = [exprs]
 
@@ -178,7 +194,7 @@ def cse(exprs, symbols=None, optimizations=None, postprocess=None,
 
     if optimizations is None:
         optimizations = list()
-    elif optimizations == 'basic':
+    elif optimizations == "basic":
         optimizations = basic_optimizations
 
     # Preprocess the expressions to give us better optimization opportunities.
@@ -195,16 +211,14 @@ def cse(exprs, symbols=None, optimizations=None, postprocess=None,
     opt_subs = opt_cse(reduced_exprs, order)
 
     # Main CSE algorithm.
-    replacements, reduced_exprs = tree_cse(reduced_exprs, symbols, opt_subs,
-                                           order, ignore, light_ignore)
+    replacements, reduced_exprs = tree_cse(reduced_exprs, symbols, opt_subs, order, ignore, light_ignore)
 
     # Postprocess the expressions to return the expressions to canonical form.
     exprs = copy
     for i, (sym, subtree) in enumerate(replacements):
         subtree = postprocess_for_cse(subtree, optimizations)
         replacements[i] = (sym, subtree)
-    reduced_exprs = [postprocess_for_cse(e, optimizations)
-                     for e in reduced_exprs]
+    reduced_exprs = [postprocess_for_cse(e, optimizations) for e in reduced_exprs]
 
     # Get the matrices back
     for i, e in enumerate(exprs):

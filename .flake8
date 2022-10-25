@@ -1,0 +1,5 @@
+[flake8]
+per-file-ignores = tests/*.py:E741
+
+max-line-length = 120
+extend-ignore = N802,N803,N806,N813
