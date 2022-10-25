@@ -13,13 +13,15 @@ from sympy.polys.monomials import itermonomials as sp_itermonomials
 import functools
 
 
-q, x, y, z = sp.symbols('q x y z')
+q, x, y, z = sp.symbols("q x y z")
+
 
 def TriangleNumbers(n):
     """
     Returns the nth triangle number
     """
     return int((n * (n + 1)) / 2)
+
 
 @functools.lru_cache(maxsize=None)
 def Nterms(p):
@@ -34,7 +36,7 @@ def Nterms(p):
 
 
 def new_itermonomials(symbols, lower_order, upper_order):
-    monom_key = monomial_key('grevlex', symbols)
+    monom_key = monomial_key("grevlex", symbols)
     monoms = itermonomials(symbols, upper_order)
     monoms = sorted(monoms, key=monom_key)
     new_monoms = []
@@ -44,10 +46,8 @@ def new_itermonomials(symbols, lower_order, upper_order):
         for symbol in symbols:
             order += monom_dict[symbol]
         if order >= lower_order:
-             new_monoms.append(monom)
+            new_monoms.append(monom)
     return set(new_monoms)
-
-
 
 
 """Tools and arithmetics for monomials of distributed polynomials. """
@@ -111,7 +111,6 @@ from sympy.core import Mul, S
 #         return [Mul(*item) for item in product(variables, repeat=degree)]
 
 
-
 def itermonomials(symbols, max_degree, min_degree=0):
     monoms = list(sp_itermonomials(symbols, max_degree))
     new_monoms = []
@@ -125,7 +124,7 @@ def itermonomials(symbols, max_degree, min_degree=0):
     return set(new_monoms)
 
 
-def generate_mappings(order, symbols, key='grevlex', source_order=0):
+def generate_mappings(order, symbols, key="grevlex", source_order=0):
     """
     generate_mappings(order, symbols, key='grevlex'):
 

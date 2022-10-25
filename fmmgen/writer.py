@@ -9,34 +9,51 @@ import os
 import subprocess
 import sympy as sp
 from sympy import count_ops
+
 # from sympy.printing.fcode import FCodePrinter
 from fmmgen.printers import *
 from fmmgen.utils import Nterms
 import textwrap
 from fmmgen.cse import cse
-from fmmgen.generator import generate_mappings, generate_M_operators, \
-                  generate_M_shift_operators, generate_L_operators, \
-                  generate_L_shift_operators, \
-                  generate_L2P_operators, \
-                  generate_M2P_operators, \
-                  generate_P2P_operators, generate_derivs
+from fmmgen.generator import (
+    generate_mappings,
+    generate_M_operators,
+    generate_M_shift_operators,
+    generate_L_operators,
+    generate_L_shift_operators,
+    generate_L2P_operators,
+    generate_M2P_operators,
+    generate_P2P_operators,
+    generate_derivs,
+)
 
 import logging
+
 logger = logging.getLogger(name="fmmgen")
 
 
-q, x, y, z, R = sp.symbols('q x y z R')
+q, x, y, z, R = sp.symbols("q x y z R")
 symbols = (x, y, z)
 
 
-
-def generate_code(order, name, precision='double',
-                  cython=False,
-                  CSE=False, harmonic_derivs=False,
-                  include_dir=None, src_dir=None,
-                  potential=True, field=True,
-                  source_order=0, atomic=False,
-                  gpu=False, minpow=0, language='c', save_opscounts=None):
+def generate_code(
+    order,
+    name,
+    precision="double",
+    cython=False,
+    CSE=False,
+    harmonic_derivs=False,
+    include_dir=None,
+    src_dir=None,
+    potential=True,
+    field=True,
+    source_order=0,
+    atomic=False,
+    gpu=False,
+    minpow=0,
+    language="c",
+    save_opscounts=None,
+):
     """
     Inputs:
 
@@ -80,19 +97,18 @@ def generate_code(order, name, precision='double',
         Filename to save opcounts in
     """
     if save_opscounts:
-        f = open(save_opscounts, 'w')
+        f = open(save_opscounts, "w")
 
-    assert language in ['c', 'c++'], "Language must be 'c' or 'c++'"
-    if language == 'c':
-        fext = 'c'
-        hext = 'h'
-    if language == 'c++':
-        fext = 'cpp'
-        hext = 'h'
-
+    assert language in ["c", "c++"], "Language must be 'c' or 'c++'"
+    if language == "c":
+        fext = "c"
+        hext = "h"
+    if language == "c++":
+        fext = "cpp"
+        hext = "h"
 
     logger.info(f"Generating FMM operators to order {order}")
-    assert precision in ['double', 'float'], "Precision must be float or double"
+    assert precision in ["double", "float"], "Precision must be float or double"
     logger.info(f"Precision = {precision}")
     if CSE:
         logger.info(f"CSE Enabled")
@@ -104,10 +120,9 @@ def generate_code(order, name, precision='double',
     header = ""
     body = ""
 
-    x, y, z, q = sp.symbols('x y z q')
+    x, y, z, q = sp.symbols("x y z q")
     symbols = (x, y, z)
     coords = [x, y, z]
-
 
     start = source_order
     if field:
@@ -132,109 +147,155 @@ def generate_code(order, name, precision='double',
 
     for i in range(start, order):
         print(f"Generating Order {i} operators")
-        M_dict, _ = generate_mappings(i, symbols,'grevlex',  source_order=source_order)
-        L_dict, _ = generate_mappings(i - source_order, symbols, 'grevlex', source_order=0)
-
+        M_dict, _ = generate_mappings(i, symbols, "grevlex", source_order=source_order)
+        L_dict, _ = generate_mappings(
+            i - source_order, symbols, "grevlex", source_order=0
+        )
 
         M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
-        
-        head, code, P2M_opscount = p.generate(f'P2M_{i}', 'M', M,
-                                coords + [q], operator='+=')
+
+        head, code, P2M_opscount = p.generate(
+            f"P2M_{i}", "M", M, coords + [q], operator="+="
+        )
         print(f"P2M_{i} opscount = {P2M_opscount}")
         header += head
         body += code
-        Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
-        
-        head, code, M2M_opscount = p.generate(f'M2M_{i}', 'Ms', Ms,
-                                list(symbols) + \
-                                [sp.MatrixSymbol('M', Nterms(i), 1)],
-                                operator="+=", atomic=atomic)
+        Ms = sp.Matrix(
+            generate_M_shift_operators(i, symbols, M_dict, source_order=source_order)
+        )
+
+        head, code, M2M_opscount = p.generate(
+            f"M2M_{i}",
+            "Ms",
+            Ms,
+            list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
+            operator="+=",
+            atomic=atomic,
+        )
         header += head
-        body += code + '\n'
+        body += code + "\n"
         print(f"M2M_{i} opscount = {M2M_opscount}")
         # Two stages here; generate derivs and then the L matrix. Both
         # must be passed to the function printer.
-        derivs = sp.Matrix(generate_derivs(i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs))
-        L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict,
-                      source_order=source_order))
+        derivs = sp.Matrix(
+            generate_derivs(
+                i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs
+            )
+        )
+        L = sp.Matrix(
+            generate_L_operators(i, symbols, M_dict, L_dict, source_order=source_order)
+        )
 
-        head, code, M2L_opscount = p.generate(f'M2L_{i}', 'L', L,
-                               list(symbols) +  \
-                               [sp.MatrixSymbol('M', Nterms(i), 1)],
-                                operator="+=", atomic=atomic, internal=[('D', derivs)])
+        head, code, M2L_opscount = p.generate(
+            f"M2L_{i}",
+            "L",
+            L,
+            list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
+            operator="+=",
+            atomic=atomic,
+            internal=[("D", derivs)],
+        )
         header += head
-        body += code + '\n'
+        body += code + "\n"
         print(f"M2L_{i} opscount = {M2L_opscount}")
 
-        Ls = sp.Matrix(generate_L_shift_operators(i, symbols, L_dict, source_order=source_order))
-        head, code, L2L_opscount = p.generate(f'L2L_{i}', 'Ls', Ls,
-                               list(symbols) + \
-                               [sp.MatrixSymbol('L', Nterms(i), 1)],
-                                operator="+=", atomic=atomic)
+        Ls = sp.Matrix(
+            generate_L_shift_operators(i, symbols, L_dict, source_order=source_order)
+        )
+        head, code, L2L_opscount = p.generate(
+            f"L2L_{i}",
+            "Ls",
+            Ls,
+            list(symbols) + [sp.MatrixSymbol("L", Nterms(i), 1)],
+            operator="+=",
+            atomic=atomic,
+        )
 
         header += head
-        body += code + '\n'
+        body += code + "\n"
         print(f"L2L_{i} opscount = {L2L_opscount}")
-        L2P = generate_L2P_operators(i, symbols, L_dict,
-                                    potential=potential,
-                                    field=field)
-        
+        L2P = generate_L2P_operators(
+            i, symbols, L_dict, potential=potential, field=field
+        )
+
         Fs = sp.Matrix(L2P)
-        head, code, L2P_opscount = p.generate(f'L2P_{i}', 'F', Fs,
-                               list(symbols) + \
-                               [sp.MatrixSymbol('L', Nterms(i), 1)],
-                                operator="+=", atomic=atomic)
+        head, code, L2P_opscount = p.generate(
+            f"L2P_{i}",
+            "F",
+            Fs,
+            list(symbols) + [sp.MatrixSymbol("L", Nterms(i), 1)],
+            operator="+=",
+            atomic=atomic,
+        )
 
         header += head
-        body += code + '\n'
+        body += code + "\n"
         print(f"L2P_{i} opscount = {L2P_opscount}")
-        M2P = generate_M2P_operators(i, symbols, M_dict,
-                                     potential=potential,
-                                     field=field, source_order=source_order, harmonic_derivs=harmonic_derivs)
+        M2P = generate_M2P_operators(
+            i,
+            symbols,
+            M_dict,
+            potential=potential,
+            field=field,
+            source_order=source_order,
+            harmonic_derivs=harmonic_derivs,
+        )
         Fs = sp.Matrix(M2P)
-        head, code, M2P_opscount = p.generate(f'M2P_{i}', 'F', Fs,
-                                list(symbols) + \
-                                [sp.MatrixSymbol('M', Nterms(i), 1)],
-                                operator="+=", atomic=atomic)
+        head, code, M2P_opscount = p.generate(
+            f"M2P_{i}",
+            "F",
+            Fs,
+            list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
+            operator="+=",
+            atomic=atomic,
+        )
         header += head
-        body += code + '\n'
+        body += code + "\n"
         print(f"M2P_{i} opscount = {M2P_opscount}")
         if i == start:
-            P2P = sp.Matrix(generate_P2P_operators(symbols, M_dict,
-                                                   potential=potential,
-                                                   field=field,
-                                                   source_order=source_order))
+            P2P = sp.Matrix(
+                generate_P2P_operators(
+                    symbols,
+                    M_dict,
+                    potential=potential,
+                    field=field,
+                    source_order=source_order,
+                )
+            )
 
-            head, code, P2P_opscount = p.generate(f'P2P', 'F', P2P,
-                                    list(symbols) + \
-                                    [sp.MatrixSymbol('S', Nterms(i), 1)],
-                                    operator="+=", atomic=atomic
-                                    )
+            head, code, P2P_opscount = p.generate(
+                f"P2P",
+                "F",
+                P2P,
+                list(symbols) + [sp.MatrixSymbol("S", Nterms(i), 1)],
+                operator="+=",
+                atomic=atomic,
+            )
             print(f"P2P opscount = {P2P_opscount}")
             header += head
-            body += code + '\n'
+            body += code + "\n"
 
         if save_opscounts:
             if i == start:
-                f.write(f'P2P,{P2P_opscount}\n')
-            f.write(f'P2M_{i},{P2M_opscount}\n')
-            f.write(f'M2M_{i},{M2M_opscount}\n')
-            f.write(f'M2L_{i},{M2L_opscount}\n')
-            f.write(f'L2P_{i},{L2P_opscount}\n')
-            f.write(f'L2L_{i},{L2L_opscount}\n')
-            f.write(f'M2P_{i},{M2P_opscount}\n')
+                f.write(f"P2P,{P2P_opscount}\n")
+            f.write(f"P2M_{i},{P2M_opscount}\n")
+            f.write(f"M2M_{i},{M2M_opscount}\n")
+            f.write(f"M2L_{i},{M2L_opscount}\n")
+            f.write(f"L2P_{i},{L2P_opscount}\n")
+            f.write(f"L2L_{i},{L2L_opscount}\n")
+            f.write(f"M2P_{i},{M2P_opscount}\n")
 
-# We now generate wrapper functions that cover all orders generated.
+    # We now generate wrapper functions that cover all orders generated.
     unique_funcs = []
-    func_definitions = header.split(';\n')
+    func_definitions = header.split(";\n")
     # print(f"func_defs = {func_definitions}")
     for func in func_definitions:
         # Must do it this way in order to avoid breaking
         # for expansions > 10.
-        function_name = func.split('(')[0]
+        function_name = func.split("(")[0]
         # print(f"Function_name = {function_name}")
-        end_string = f'_{start}'
-        if end_string == function_name[-len(end_string):]:
+        end_string = f"_{start}"
+        if end_string == function_name[-len(end_string) :]:
             # print("Unique!")
             unique_funcs.append(func)
         else:
@@ -242,8 +303,9 @@ def generate_code(order, name, precision='double',
             # print(f"{func} not unique")
             # print(f"  {end_string}  {function_name[-len(end_string)-1:]}")
 
-    wrapper_funcs = [f.replace(')', ', int order)').replace(f'_{start}', '')
-                     for f in unique_funcs]
+    wrapper_funcs = [
+        f.replace(")", ", int order)").replace(f"_{start}", "") for f in unique_funcs
+    ]
 
     #  print(wrapper_funcs)
 
@@ -252,29 +314,37 @@ def generate_code(order, name, precision='double',
 
     for wfunc, func in zip(wrapper_funcs, unique_funcs):
         # Add to header file
-        header += wfunc + ';\n'
+        header += wfunc + ";\n"
         # Create a switch statement that covers all functions:
         code = wfunc + " {\n"
-        code += 'switch (order) {\n'
+        code += "switch (order) {\n"
         for i in range(start, order):
-            code += '  case {}:\n'.format(i)
+            code += "  case {}:\n".format(i)
             # print(func)
-            replaced_code = func.replace(f'_{start}', f'_{i}').replace('* ','').replace('double ','').replace('float ','').replace('void ', '')
+            replaced_code = (
+                func.replace(f"_{start}", f"_{i}")
+                .replace("* ", "")
+                .replace("double ", "")
+                .replace("float ", "")
+                .replace("void ", "")
+            )
             # print(f"replaced_code: {replaced_code}")
-            code += '    ' + replaced_code + ';\n    break;\n'
+            code += "    " + replaced_code + ";\n    break;\n"
         code += "  }\n}\n"
         # print(code)
         body += code
 
     if not include_dir:
-        f = open(f"{name}.{hext}", 'w')
+        f = open(f"{name}.{hext}", "w")
     else:
-        f = open(f"{include_dir.rstrip('/')}/{name}.{hext}", 'w')
+        f = open(f"{include_dir.rstrip('/')}/{name}.{hext}", "w")
     f.write(f"#pragma once\n")
     f.write(f"#define FMMGEN_MINORDER {start}\n")
     f.write(f"#define FMMGEN_MAXORDER {order}\n")
     f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
-    f.write(f"#define FMMGEN_SOURCESIZE {Nterms(source_order) - Nterms(source_order - 1)}\n")
+    f.write(
+        f"#define FMMGEN_SOURCESIZE {Nterms(source_order) - Nterms(source_order - 1)}\n"
+    )
     if potential and not field:
         osize = 1
     elif field and not potential:
@@ -286,15 +356,15 @@ def generate_code(order, name, precision='double',
     f.close()
 
     if not src_dir:
-        f = open(f"{name}.{fext}", 'w')
+        f = open(f"{name}.{fext}", "w")
     else:
-        f = open(f"{src_dir.rstrip('/')}/{name}.{fext}", 'w')
+        f = open(f"{src_dir.rstrip('/')}/{name}.{fext}", "w")
 
     f.write(f'#include "{name}.{hext}"\n')
-    if language == 'c':
+    if language == "c":
         f.write(f'#include "math.h"\n')
-    elif language == 'c++':
-        f.write(f'#include<cmath>\n')
+    elif language == "c++":
+        f.write(f"#include<cmath>\n")
 
     f.write(body)
     f.close()
@@ -307,7 +377,8 @@ def generate_code(order, name, precision='double',
         library = f"{name}"
 
         f = open(f"{name}_decl.pxd", "w")
-        pxdcode = textwrap.dedent("""\
+        pxdcode = textwrap.dedent(
+            """\
         cdef extern from "{}.h":
             cdef int FMMGEN_MINORDER
             cdef int FMMGEN_MAXORDER
@@ -315,14 +386,16 @@ def generate_code(order, name, precision='double',
             cdef int FMMGEN_SOURCESIZE
             cdef int FMMGEN_OUTPUTSIZE
             {}
-        """)
-        f.write(pxdcode.format(name, '\n    '.join(func_definitions)))
+        """
+        )
+        f.write(pxdcode.format(name, "\n    ".join(func_definitions)))
 
         f.close()
 
         f = open(f"{name}_wrap.pyx", "w")
         # expose the C functions from the header file.
-        pyxcode = textwrap.dedent("""\
+        pyxcode = textwrap.dedent(
+            """\
         # cython: language_level=3
         cimport numpy as np
         cimport {}
@@ -332,11 +405,10 @@ def generate_code(order, name, precision='double',
         FMMGEN_SOURCEORDER = {}.FMMGEN_SOURCEORDER
         FMMGEN_SOURCESIZE = {}.FMMGEN_SOURCESIZE
         FMMGEN_OUTPUTSIZE = {}.FMMGEN_OUTPUTSIZE
-        """).format(*[name + '_decl']*6)
+        """
+        ).format(*[name + "_decl"] * 6)
 
-        subsdict = {" *": "[:]",
-                    "void": "cpdef",
-                    "_": ""}
+        subsdict = {" *": "[:]", "void": "cpdef", "_": ""}
 
         # Generate the actual wrapper code
         for funcname in func_definitions:
@@ -346,7 +418,7 @@ def generate_code(order, name, precision='double',
             pyfuncname = funcname
             for key, value in subsdict.items():
                 pyfuncname = pyfuncname.replace(key, value)
-            pyxcode += pyfuncname + ':\n'
+            pyxcode += pyfuncname + ":\n"
 
             function_name = funcname.split("(")[0].split(" ")[1]
             args = funcname.split("(")[1][:-1].split(",")
@@ -357,9 +429,15 @@ def generate_code(order, name, precision='double',
                     arg = arg.replace("* ", "&") + "[0]"
                 processed_args.append(arg.split(" ")[-1])
 
-            pyxcode += '    ' + \
-                       name + '_decl.' + function_name + \
-                       "(" + ', '.join(processed_args) + ')\n\n'
+            pyxcode += (
+                "    "
+                + name
+                + "_decl."
+                + function_name
+                + "("
+                + ", ".join(processed_args)
+                + ")\n\n"
+            )
 
         f.write(pyxcode)
         f.close()
@@ -369,7 +447,8 @@ def generate_code(order, name, precision='double',
         # print(library)
 
         logger.info(f"Generating Cython buildfile: {name}_wrap.pyxbld")
-        bldcode = textwrap.dedent("""\
+        bldcode = textwrap.dedent(
+            """\
         import numpy as np
 
         def make_ext(modname, pyxfilename):
@@ -380,7 +459,8 @@ def generate_code(order, name, precision='double',
                              library_dirs=['.'],
                              extra_link_args=[],
                              extra_compile_args=['-O3', '-fopenmp'])
-        """).format(library + '.c', library)
+        """
+        ).format(library + ".c", library)
 
         f.write(bldcode)
         f.close()
