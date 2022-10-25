@@ -31,9 +31,6 @@ To try out the module, first install it and the requirements:
 ```bash
 git clone https://github.com/rpep/fmmgen.git
 cd fmmgen
-virtualenv env
-source env/bin/activate
-pip install -r requirements.txt
 pip install .
 ```
 
