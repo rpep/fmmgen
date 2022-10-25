@@ -21,6 +21,6 @@ jobs:
       - name: Install package and dependencies
         run: poetry config virtualenvs.create false && poetry install
       - name: Tests
-        run: poetry run pytest
+        run: poetry run pytest tests
       - name: Black
-        run: poetry run black
+        run: poetry run black .
