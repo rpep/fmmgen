@@ -1,6 +1,6 @@
 
-from sympy.printing.ccode import C99CodePrinter as C99Base
-from sympy.printing.cxxcode import CXX11CodePrinter as CXX11Base
+from sympy.printing.c import C99CodePrinter as C99Base
+from sympy.printing.cxx import CXX11CodePrinter as CXX11Base
 import logging
 logger = logging.getLogger(name="fmmgen")
 import sympy as sp
