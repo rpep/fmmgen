@@ -251,6 +251,7 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
     tree.body_x.resize(np); tree.body_y.resize(np); tree.body_z.resize(np);
     tree.body_S.resize(FMMGEN_SOURCESIZE * np);
     tree.body_perm.resize(np);
+    tree.Fm.resize(FMMGEN_OUTPUTSIZE * np);   // persistent; re-zeroed per solve
 
     size_t off = 0;
     for (size_t c = 0; c < tree.cells.size(); c++) {
@@ -326,12 +327,29 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
   return tree;
 }
 
+// M and L are each ncells * Msize(order) doubles -- 16.8 MB apiece at N=1M,
+// p=5 -- and were filled by one thread while every other thread waited.
+// schedule(static) so each thread re-touches the same pages on every solve.
 void Tree::clear_M() {
-  std::fill(M.begin(), M.end(), 0);
+  const size_t n = M.size();
+  double *const m = M.data();
+  #pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < n; i++) m[i] = 0.0;
 }
 
 void Tree::clear_L() {
-  std::fill(L.begin(), L.end(), 0);
+  const size_t n = L.size();
+  double *const l = L.data();
+  #pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < n; i++) l[i] = 0.0;
+}
+
+//! Zero the persistent Morton-ordered accumulator. See Tree::Fm.
+void Tree::clear_Fm() {
+  const size_t n = Fm.size();
+  double *const f = Fm.data();
+  #pragma omp parallel for schedule(static)
+  for (size_t i = 0; i < n; i++) f[i] = 0.0;
 }
 
 void Tree::compute_field_fmm(double *F) {
@@ -339,7 +357,7 @@ void Tree::compute_field_fmm(double *F) {
   // Keeping the whole solve in Morton order means every stage writes
   // contiguously; the only permuted access in the entire method is the single
   // pass at the end.
-  std::vector<double> Fm(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
+  clear_Fm();
   clear_M();
   clear_L();
   #pragma omp parallel
@@ -373,7 +391,7 @@ void Tree::compute_field_fmm(double *F) {
 }
 
 void Tree::compute_field_bh(double *F) {
-  std::vector<double> Fm(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
+  clear_Fm();
   clear_M();
   #pragma omp parallel
   {
@@ -396,15 +414,27 @@ void Tree::compute_field_bh(double *F) {
 }
 
 void Tree::compute_field_exact(double *F) {
-  std::vector<double> Fm(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
+  // Keeps its own scratch buffer rather than reusing the persistent Tree::Fm:
+  // this is the reference solution the approximate methods are measured
+  // against, so it must not share state with them.
+  std::vector<double> Fdirect(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
   evaluate_direct(body_x.data(), body_y.data(), body_z.data(),
-                  body_S.data(), Fm.data(), particles.size());
-  scatter_output(Fm.data(), F);
+                  body_S.data(), Fdirect.data(), particles.size());
+  scatter_output(Fdirect.data(), F);
 }
 
 void Tree::scatter_output(const double *Fm, double *F) {
-  for (size_t m = 0; m < particles.size(); m++) {
-    const size_t o = body_perm[m];
+  // body_perm is a permutation, so every destination index is distinct: this is
+  // a pure copy with no accumulation, hence race-free in parallel and unable to
+  // change a single digit of the result however it is scheduled.
+  //
+  // It was the largest serial stage left in the solve: 21.5 ms of 160 ms at
+  // N=1M on 96 cores, 13% of the method, and flat in thread count.
+  const size_t np = particles.size();
+  const size_t *const perm = body_perm.data();
+  #pragma omp parallel for schedule(static)
+  for (size_t m = 0; m < np; m++) {
+    const size_t o = perm[m];
     for (int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
       F[FMMGEN_OUTPUTSIZE*o + k] = Fm[FMMGEN_OUTPUTSIZE*m + k];
     }

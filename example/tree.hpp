@@ -131,6 +131,20 @@ public:
   std::vector<double> body_x, body_y, body_z;
   std::vector<double> body_S;    // FMMGEN_SOURCESIZE * nparticles
   std::vector<size_t> body_perm; // body_perm[sorted] = original index
+
+  /*! \brief Morton-ordered output accumulator, persistent across solves.
+
+      Was a local `std::vector<double>` inside compute_field_fmm, so every call
+      paid a 32 MB allocation (at N=1M), the kernel's page faults on first
+      touch, and a serial zero -- per solve, for a tree whose geometry never
+      changes. The intended usage is build once and solve many times, so this is
+      allocated once in build_tree and re-zeroed in parallel per solve.
+
+      The zeroing loop uses schedule(static), which matters for more than
+      overhead: the same thread re-touches the same pages on every solve, so the
+      pages stay on that thread's NUMA node and its slice stays cache-warm from
+      one solve to the next. */
+  std::vector<double> Fm;
   std::vector<std::vector<size_t>> levels;  // Cells grouped by tree level for parallel traversal
   void compute_field_fmm(double *F);
   void compute_field_bh(double *F);
@@ -140,6 +154,7 @@ public:
 private:
   void clear_M();
   void clear_L();
+  void clear_Fm();
 };
 
 void printTreeParticles(std::vector<Cell> &cells, size_t cell, size_t depth);
