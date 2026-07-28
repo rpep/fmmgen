@@ -253,6 +253,21 @@ def generate_code(
             header += head
             body += code + "\n"
 
+            # Batched form of the same operator: one target against a
+            # contiguous run of sources, inside an omp simd reduction loop.
+            # The per-pair P2P above cannot vectorise -- it is one call per
+            # interaction, across translation units -- and P2P is the dominant
+            # cost of the whole method at realistic particle counts.
+            head, code, _ = p.generate_batch(
+                "P2P_batch",
+                "F",
+                P2P,
+                [str(sym) for sym in symbols],
+                Nterms(source_order) - Nterms(source_order - 1),
+            )
+            header += head
+            body += code + "\n"
+
         if save_opscounts:
             if i == start:
                 f.write(f"P2P,{P2P_opscount}\n")
@@ -315,6 +330,8 @@ def generate_code(
     else:
         f = open(f"{include_dir.rstrip('/')}/{name}.{hext}", "w")
     f.write("#pragma once\n")
+    # P2P_batch takes size_t range bounds.
+    f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
     f.write(f"#define FMMGEN_MINORDER {start}\n")
     f.write(f"#define FMMGEN_MAXORDER {order}\n")
     f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
@@ -382,19 +399,20 @@ def generate_code(
         """
         ).format(*[name + "_decl"] * 6)
 
-        subsdict = {" *": "[:]", "void": "cpdef", "_": ""}
-
-        # Generate the actual wrapper code
+        # Underscores are stripped from the FUNCTION NAME only (so M2M_1 is
+        # exposed as M2M1, as it always has been). Applying that substitution
+        # to the whole signature, as this once did, also rewrites parameter
+        # types -- "size_t" became "sizet" and the generated .pyx would not
+        # compile as soon as any operator took one.
         for funcname in func_definitions:
-            # print(funcname)
             if not funcname:
                 continue
-            pyfuncname = funcname
-            for key, value in subsdict.items():
-                pyfuncname = pyfuncname.replace(key, value)
-            pyxcode += pyfuncname + ":\n"
+            head, argstr = funcname.split("(", 1)
+            argstr = argstr.rsplit(")", 1)[0]
+            cname = head.split()[-1]
+            pyxcode += "cpdef " + cname.replace("_", "") + "(" + argstr.replace(" *", "[:]") + "):\n"
 
-            function_name = funcname.split("(")[0].split(" ")[1]
+            function_name = cname
             args = funcname.split("(")[1][:-1].split(",")
             processed_args = []
 

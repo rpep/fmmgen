@@ -9,7 +9,7 @@
 #include "calculate.hpp"
 #include "operators.h"
 
-Cell::Cell(double x, double y, double z, double r, size_t parent, size_t order, size_t level, size_t ncrit) {
+Cell::Cell(double x, double y, double z, double r, size_t parent, size_t level, size_t ncrit) {
     this->x = x;
     this->y = y;
     this->z = z;
@@ -90,7 +90,7 @@ void printTreeParticles(std::vector<Cell> &cells, size_t cell, size_t depth) {
   }
 }
 
-void add_child(std::vector<Cell> &cells, int octant, size_t p, size_t ncrit, size_t order) {
+void add_child(std::vector<Cell> &cells, int octant, size_t p, size_t ncrit) {
     int c = cells.size();
     // Do not change octant to size_t - otherwise the calculation
     // of x, y, z position through bit masking is *not* correct.
@@ -100,13 +100,13 @@ void add_child(std::vector<Cell> &cells, int octant, size_t p, size_t ncrit, siz
     double z = cells[p].z + r * ((octant & 4) / 2 - 1);
     size_t parent = p;
     size_t level = cells[p].level + 1;
-    cells.push_back(Cell(x, y, z, r, parent, order, level, ncrit));
+    cells.push_back(Cell(x, y, z, r, parent, level, ncrit));
     cells[p].child[octant] = c;
     cells[c].nleaf = 0;
     cells[p].nchild = (cells[p].nchild | (1 << octant));
 }
 
-void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles, size_t p, size_t ncrit, size_t order) {
+void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles, size_t p, size_t ncrit) {
   size_t l, c;
   // Do not change octant to size_t - otherwise the calculation
   // of x, y, z position in add_child is not correct!
@@ -118,13 +118,13 @@ void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles, size
       ((particles[l].r[2] > cells[p].z) << 2);
 
     if (!((cells[p].nchild) & (1 << octant))) {
-      add_child(cells, octant, p, ncrit, order);
+      add_child(cells, octant, p, ncrit);
     }
     c = cells[p].child[octant];
     cells[c].leaf[cells[c].nleaf] = l;
     cells[c].nleaf += 1;
     if (cells[c].nleaf >= ncrit) {
-      split_cell(cells, particles, c, ncrit, order);
+      split_cell(cells, particles, c, ncrit);
   }
   }
 }
@@ -209,7 +209,7 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
   // std::cout << "xmax = " << xmax << ", ymax = " << ymax << ", zmax = " << zmax << ", rmax = " << r << std::endl;
 
   double r = (xmax > ymax ? (xmax > zmax? xmax: zmax): (ymax > zmax ? ymax: zmax)) * 1.001;
-  auto root = Cell(xavg, yavg, zavg, r, 0, order, 0, ncrit);
+  auto root = Cell(xavg, yavg, zavg, r, 0, 0, ncrit);
 
   // Reserve capacity to avoid reallocations during tree construction
   // Estimate: ~8 cells per ncrit particles
@@ -221,14 +221,14 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
       cells[curr].nleaf += 1;
       octant = (particles[i].r[0] > cells[curr].x) + ((particles[i].r[1] > cells[curr].y) << 1) + ((particles[i].r[2] > cells[curr].z) << 2);
       if (!(cells[curr].nchild & (1 << octant))) {
-        add_child(cells, octant, curr, ncrit, order);
+        add_child(cells, octant, curr, ncrit);
       }
       curr = cells[curr].child[octant];
     }
     cells[curr].leaf[cells[curr].nleaf] = i;
     cells[curr].nleaf += 1;
     if (cells[curr].nleaf >= ncrit) {
-      split_cell(cells, particles, curr, ncrit, order);
+      split_cell(cells, particles, curr, ncrit);
     }
   }
 
@@ -243,6 +243,43 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
   tree.particles = particles;
 
   interact_dehnen_lazy(0, 0, tree.cells, particles, theta, order, ncrit, tree.M2L_list, tree.P2P_list);
+
+  // Permute particles into tree order and copy them into flat, by-value
+  // arrays. See Tree::body_x for why this matters to the P2P kernel.
+  {
+    const size_t np = particles.size();
+    tree.body_x.resize(np); tree.body_y.resize(np); tree.body_z.resize(np);
+    tree.body_S.resize(FMMGEN_SOURCESIZE * np);
+    tree.body_perm.resize(np);
+
+    size_t off = 0;
+    for (size_t c = 0; c < tree.cells.size(); c++) {
+      if (tree.cells[c].nleaf >= ncrit) continue;   // internal cell
+      tree.cells[c].body_offset = off;
+      for (size_t i = 0; i < tree.cells[c].nleaf; i++) {
+        const size_t l = tree.cells[c].leaf[i];
+        tree.body_perm[off] = l;
+        tree.body_x[off] = particles[l].r[0];
+        tree.body_y[off] = particles[l].r[1];
+        tree.body_z[off] = particles[l].r[2];
+        for (int d = 0; d < FMMGEN_SOURCESIZE; d++)
+          tree.body_S[FMMGEN_SOURCESIZE*off + d] = particles[l].S[d];
+        off++;
+      }
+    }
+    if (off != np) {
+      throw std::runtime_error("particle permutation did not cover every particle");
+    }
+
+    // Cell::leaf has no readers left: every evaluation stage now addresses
+    // particles as the contiguous range [body_offset, body_offset + nleaf) in
+    // the arrays above. Release it rather than carry a second, redundant
+    // representation of the same information (ncrit size_t per cell, and it
+    // was allocated for internal cells too).
+    for (size_t c = 0; c < tree.cells.size(); c++) {
+      std::vector<size_t>().swap(tree.cells[c].leaf);
+    }
+  }
 
   // Group both interaction lists by target with a counting sort.
   //
@@ -298,70 +335,78 @@ void Tree::clear_L() {
 }
 
 void Tree::compute_field_fmm(double *F) {
-  for(size_t i = 0; i < FMMGEN_OUTPUTSIZE*particles.size(); i++) {
-    F[i] = 0.0;
-  }
+  // Computed in Morton order, then scattered once into the caller's ordering.
+  // Keeping the whole solve in Morton order means every stage writes
+  // contiguously; the only permuted access in the entire method is the single
+  // pass at the end.
+  std::vector<double> Fm(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
   clear_M();
   clear_L();
   #pragma omp parallel
   {
-    evaluate_P2M(particles, cells, 0, ncrit, order);
+    evaluate_P2M(cells, body_x.data(), body_y.data(), body_z.data(),
+                 body_S.data(), ncrit, order);
   }
-
-  // M2M with level-synchronous parallelization
   #pragma omp parallel
   {
-    evaluate_M2M(particles, cells, levels, order);
+    evaluate_M2M(cells, levels, order);
   }
-
   #ifdef FMMLIBDEBUG
   M_sanity_check(cells);
   #endif
-
   #pragma omp parallel
   {
     evaluate_M2L_lazy(cells, M2L_list, M2L_group, order);
-    evaluate_P2P_lazy(cells, particles, P2P_list, P2P_group, F);
+    evaluate_P2P_lazy(cells, body_x.data(), body_y.data(), body_z.data(),
+                      body_S.data(), P2P_list, P2P_group, Fm.data());
   }
-
-  // L2L with level-synchronous parallelization
   #pragma omp parallel
   {
     evaluate_L2L(cells, levels, order);
   }
-
   #pragma omp parallel
   {
-    evaluate_L2P(particles, cells, F, ncrit, order);
+    evaluate_L2P(cells, body_x.data(), body_y.data(), body_z.data(),
+                 Fm.data(), ncrit, order);
   }
+  scatter_output(Fm.data(), F);
 }
 
 void Tree::compute_field_bh(double *F) {
-  for(size_t i = 0; i < FMMGEN_OUTPUTSIZE*particles.size(); i++) {
-    F[i] = 0.0;
-  }
+  std::vector<double> Fm(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
   clear_M();
   #pragma omp parallel
   {
-    evaluate_P2M(particles, cells, 0, ncrit, order);
+    evaluate_P2M(cells, body_x.data(), body_y.data(), body_z.data(),
+                 body_S.data(), ncrit, order);
   }
-
-  // M2M with level-synchronous parallelization
   #pragma omp parallel
   {
-    evaluate_M2M(particles, cells, levels, order);
+    evaluate_M2M(cells, levels, order);
   }
-
   #ifdef FMMLIBDEBUG
   M_sanity_check(cells);
   #endif
-
   #pragma omp parallel for schedule(runtime)
-  for (unsigned int i = 0; i < particles.size(); i++) {
-    evaluate_M2P_and_P2P(particles, 0, i, cells, F, ncrit, theta, order);
+  for (size_t m = 0; m < particles.size(); m++) {
+    evaluate_M2P_and_P2P(body_x.data(), body_y.data(), body_z.data(),
+                         body_S.data(), 0, m, cells, Fm.data(), ncrit, theta, order);
   }
+  scatter_output(Fm.data(), F);
 }
 
 void Tree::compute_field_exact(double *F) {
-  evaluate_direct(particles, F, particles.size());
+  std::vector<double> Fm(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
+  evaluate_direct(body_x.data(), body_y.data(), body_z.data(),
+                  body_S.data(), Fm.data(), particles.size());
+  scatter_output(Fm.data(), F);
+}
+
+void Tree::scatter_output(const double *Fm, double *F) {
+  for (size_t m = 0; m < particles.size(); m++) {
+    const size_t o = body_perm[m];
+    for (int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
+      F[FMMGEN_OUTPUTSIZE*o + k] = Fm[FMMGEN_OUTPUTSIZE*m + k];
+    }
+  }
 }

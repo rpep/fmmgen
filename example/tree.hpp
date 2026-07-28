@@ -54,6 +54,10 @@ public:
   double *M;
   double *L;
   std::vector<size_t> leaf; /*!< \brief Indices of particles in the cell. */
+  /*! \brief Start of this cell's particles in the tree's Morton-ordered
+      arrays. A leaf's particles occupy [body_offset, body_offset + nleaf).
+      Meaningful for leaf cells only. */
+  size_t body_offset;
   double x; /*!< \brief x coordinates of cell centre. */
   double y; /*!< \brief y coordinates of cell centre. */
   double z; /*!< \brief z coordinates of cell centre. */
@@ -66,7 +70,7 @@ public:
                 */
   double rmax;
   size_t parent; /*!< \brief Index of parent cell of this cell. */
-  Cell(double x, double y, double z, double r, size_t parent, size_t order, size_t level, size_t ncrit);
+  Cell(double x, double y, double z, double r, size_t parent, size_t level, size_t ncrit);
   ~Cell();
   Cell(const Cell& other);
   Cell(Cell&& other);
@@ -112,10 +116,27 @@ public:
   /*! \brief Offsets into P2P_list, indexed by target cell. Same role as
       M2L_group: gives each thread sole ownership of one target's output. */
   std::vector<size_t> P2P_group;
+
+  /*! \brief Particles permuted into tree (Morton) order, stored by value.
+
+      An octree subdivided by (x>cx) + ((y>cy)<<1) + ((z>cz)<<2) visits cells in
+      Z-order, so emitting each leaf's particles in cell order makes every leaf
+      a contiguous range -- no key computation needed.
+
+      Coordinates are held BY VALUE and split into separate x/y/z arrays. The
+      Particle class stores double* into caller memory, so the P2P inner loop
+      previously went leaf[p] -> index -> pointer -> scattered load: three
+      dependent loads per source particle. SoA gives the vectorised kernel
+      unit-stride loads instead of stride-3 gathers. */
+  std::vector<double> body_x, body_y, body_z;
+  std::vector<double> body_S;    // FMMGEN_SOURCESIZE * nparticles
+  std::vector<size_t> body_perm; // body_perm[sorted] = original index
   std::vector<std::vector<size_t>> levels;  // Cells grouped by tree level for parallel traversal
   void compute_field_fmm(double *F);
   void compute_field_bh(double *F);
   void compute_field_exact(double *F);
+  //! Scatter a Morton-ordered result into the caller's particle ordering.
+  void scatter_output(const double *Fm, double *F);
 private:
   void clear_M();
   void clear_L();
@@ -123,8 +144,8 @@ private:
 
 void printTreeParticles(std::vector<Cell> &cells, size_t cell, size_t depth);
 
-void add_child(std::vector<Cell> &cells, int octant, size_t p, size_t ncrit, size_t order);
+void add_child(std::vector<Cell> &cells, int octant, size_t p, size_t ncrit);
 
-void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles, size_t p, size_t ncrit, size_t order);
+void split_cell(std::vector<Cell> &cells, std::vector<Particle> &particles, size_t p, size_t ncrit);
 
 Tree build_tree(double *pos, double *mu, size_t nparticles, size_t ncrit, size_t order, double theta);

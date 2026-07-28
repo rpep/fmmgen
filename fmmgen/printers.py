@@ -1,6 +1,7 @@
 from sympy.printing.c import C99CodePrinter as C99Base
 from sympy.printing.cxx import CXX11CodePrinter as CXX11Base
 import logging
+import re
 import sympy as sp
 from sympy import Mul, S, Pow
 from fmmgen.cse import cse
@@ -349,6 +350,59 @@ class FunctionPrinter:
             return "__device__ void {}({})".format(name, combined_inputs)
         else:
             return "void {}({})".format(name, combined_inputs)
+
+    def generate_batch(self, name, LHS, RHS, symbols, source_size):
+        """Emit a batched kernel: one target against a contiguous run of sources.
+
+        The ordinary `generate` emits a function handling a single interaction.
+        That function lives in the generated translation unit while the caller
+        lives in another, so every interaction costs a real call -- and a call
+        in the innermost loop makes vectorisation impossible in principle.
+        Inspecting the object code confirmed it: zero vector instructions in
+        the P2P loop and three un-inlined call sites.
+
+        This emits the same expression inside a `#pragma omp simd` reduction
+        loop over sources, with source coordinates taken from SoA arrays so the
+        loads are unit-stride. The expression itself is untouched, so the kernel
+        stays general over source order instead of being hand-specialised for
+        the Coulomb monopole.
+        """
+        n_out = len(RHS)
+        acc = ["{}acc{}".format(LHS.lower(), i) for i in range(n_out)]
+        pr = self.precision
+
+        args = ", ".join(
+            ["{} t{}".format(pr, d) for d in symbols]
+            + ["const {} * s{}".format(pr, d) for d in symbols]
+            + ["const {} * S".format(pr), "size_t begin", "size_t end",
+               "{} * {}".format(pr, LHS)]
+        )
+        header = "void {}({})".format(name, args)
+
+        body, opscount = self._array(LHS, RHS, operator="+=", atomic=False)
+
+        # Retarget the emitted body into the loop:
+        #   S[k]    -> S[source_size*u + k]  (this source's moments)
+        #   F[k] += -> facck +=              (private reduction accumulator)
+        body = re.sub(
+            r"\bS\[(\d+)\]",
+            lambda m: "S[{}*u + {}]".format(source_size, m.group(1)),
+            body,
+        )
+        for i in range(n_out):
+            body = body.replace("{}[{}] +=".format(LHS, i), "{} +=".format(acc[i]))
+
+        lines = [header + " {"]
+        lines += ["{} {} = 0.0;".format(pr, a) for a in acc]
+        lines.append("#pragma omp simd reduction(+:" + ",".join(acc) + ")")
+        lines.append("for (size_t u = begin; u < end; u++) {")
+        lines += ["{} {} = t{} - s{}[u];".format(pr, d, d, d) for d in symbols]
+        lines.append(body.rstrip())
+        lines.append("}")
+        lines += ["{}[{}] += {};".format(LHS, i, a) for i, a in enumerate(acc)]
+        lines.append("}")
+
+        return header + ";\n", "\n".join(lines) + "\n", opscount
 
     def generate(self, name, LHS, RHS, inputs, operator="=", atomic=False, internal=[], ignore=[]):
         header = self._generate_header(name, LHS, RHS, inputs)

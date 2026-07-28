@@ -73,6 +73,29 @@ F[3] += Ftmp0*z;
 
 }
 
+void P2P_batch(double tx, double ty, double tz, const double * sx, const double * sy, const double * sz, const double * S, size_t begin, size_t end, double * F) {
+double facc0 = 0.0;
+double facc1 = 0.0;
+double facc2 = 0.0;
+double facc3 = 0.0;
+#pragma omp simd reduction(+:facc0,facc1,facc2,facc3)
+for (size_t u = begin; u < end; u++) {
+double x = tx - sx[u];
+double y = ty - sy[u];
+double z = tz - sz[u];
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv)*S[1*u + 0];
+facc0 += Rinv*S[1*u + 0];
+facc1 += Ftmp0*x;
+facc2 += Ftmp0*y;
+facc3 += Ftmp0*z;
+}
+F[0] += facc0;
+F[1] += facc1;
+F[2] += facc2;
+F[3] += facc3;
+}
+
 void P2M_2(double x, double y, double z, double q, double * M) {
 double Mtmp0 = q*x;
 double Mtmp1 = q*y;
