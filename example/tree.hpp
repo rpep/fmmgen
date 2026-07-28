@@ -4,6 +4,23 @@
 #include<vector>
 #include<array>
 #include "utils.hpp"
+#include <cstdint>
+
+/*! \brief A single cell-cell interaction.
+
+    Replaces std::pair<size_t,size_t>, which stored (source, target) for the
+    M2L list but (target, source) for the P2P list. Both lists are grouped by
+    target, so having the key in a different position in each was a latent
+    race: using the wrong member compiles cleanly and yields groups in which a
+    target appears more than once, at which point two threads write the same
+    accumulator unsynchronised. Named members make that mistake impossible.
+
+    uint32_t is ample for cell indices -- build_tree rejects anything larger --
+    and halves the memory the interaction lists occupy. */
+struct Interaction {
+  uint32_t target;
+  uint32_t source;
+};
 
 
 /*! \brief Particle class used to store position and source strength. */
@@ -84,8 +101,17 @@ public:
   std::vector<Cell> cells;
   std::vector<double> M;
   std::vector<double> L;
-  std::vector<std::pair<size_t, size_t>> M2L_list;
-  std::vector<std::pair<size_t, size_t>> P2P_list;
+  std::vector<Interaction> M2L_list;
+  /*! \brief Offsets into M2L_list, indexed by target cell.
+      Entries whose target is cell A occupy [M2L_group[A], M2L_group[A+1]).
+      Produced directly by the counting sort in build_tree, and relied on by
+      evaluate_M2L_lazy to give each thread exclusive ownership of one target's
+      local expansion. */
+  std::vector<size_t> M2L_group;
+  std::vector<Interaction> P2P_list;
+  /*! \brief Offsets into P2P_list, indexed by target cell. Same role as
+      M2L_group: gives each thread sole ownership of one target's output. */
+  std::vector<size_t> P2P_group;
   std::vector<std::vector<size_t>> levels;  // Cells grouped by tree level for parallel traversal
   void compute_field_fmm(double *F);
   void compute_field_bh(double *F);

@@ -13,6 +13,27 @@ from sympy.core.mul import _keep_coeff
 logger = logging.getLogger(name="fmmgen")
 
 
+def integral_exponent(e):
+    """Return int(e) if e is an integer-valued real number, else None.
+
+    Phi_derivatives builds R as (dx**2 + dy**2 + dz**2)**(0.5) using a Python
+    float, so every exponent in the derived expressions is a sympy Float rather
+    than an Integer, and Float(3.0).is_integer is False. Testing is_integer
+    directly therefore disabled the pow -> multiplication replacement below
+    entirely: minpow silently did nothing and 167 pow() calls survived in the
+    generated operators, two of them per P2P call.
+
+    Note the caller needs a genuine Python int, since it indexes range().
+    """
+    if e.is_Integer:
+        return int(e)
+    if e.is_Number and e.is_real and not e.is_infinite:
+        f = float(e)
+        if f == int(f):
+            return int(f)
+    return None
+
+
 class CCodePrinter(C99Base):
     def __init__(self, settings={}, minpow=False):
         super(C99Base, self).__init__(settings)
@@ -20,12 +41,14 @@ class CCodePrinter(C99Base):
 
     def _print_Pow(self, expr):
         if self.minpow:
-            if expr.exp.is_integer and expr.exp > 0 and expr.exp <= self.minpow:
-                return "(" + "*".join([self._print(expr.base) for i in range(expr.exp)]) + ")"
+            n = integral_exponent(expr.exp)
+            if n is not None and 0 < n <= self.minpow:
+                base = self._print(expr.base)
+                return "(" + "*".join([base] * n) + ")"
 
-            elif expr.exp.is_integer and expr.exp < 0 and expr.exp >= -self.minpow:
-                expr = "(1 / (" + "*".join([self._print(expr.base) for i in range(abs(expr.exp))]) + "))"
-                return expr
+            elif n is not None and -self.minpow <= n < 0:
+                base = self._print(expr.base)
+                return "(1 / (" + "*".join([base] * abs(n)) + "))"
             else:
                 return super()._print_Pow(expr)
         else:
@@ -103,12 +126,14 @@ class CXXCodePrinter(CXX11Base):
 
     def _print_Pow(self, expr):
         if self.minpow:
-            if expr.exp.is_integer and expr.exp > 0 and expr.exp <= self.minpow:
-                return "(" + "*".join([self._print(expr.base) for i in range(expr.exp)]) + ")"
+            n = integral_exponent(expr.exp)
+            if n is not None and 0 < n <= self.minpow:
+                base = self._print(expr.base)
+                return "(" + "*".join([base] * n) + ")"
 
-            elif expr.exp.is_integer and expr.exp < 0 and expr.exp >= -self.minpow:
-                expr = "(1 / (" + "*".join([self._print(expr.base) for i in range(abs(expr.exp))]) + "))"
-                return expr
+            elif n is not None and -self.minpow <= n < 0:
+                base = self._print(expr.base)
+                return "(1 / (" + "*".join([base] * abs(n)) + "))"
             else:
                 return super()._print_Pow(expr)
         else:
@@ -227,17 +252,30 @@ class FunctionPrinter:
         opscount = 0
         code = ""
 
-        # Testing on Godbolt with GCC 9.1 and ICPC shows that
-        # pow(x, 0.5) generates fewer instructions than
-        # sqrt(x), so will swap. However, leave R here in case
-        # it gets used in expansions in future for some reason.
+        # Rinv is emitted as 1.0/sqrt(...) rather than pow(..., -0.5).
+        #
+        # An earlier note here read: "Testing on Godbolt with GCC 9.1 and ICPC
+        # shows that pow(x, 0.5) generates fewer instructions than sqrt(x), so
+        # will swap." That is misleading: instruction count at the call site is
+        # not cost, because a libm call is one instruction that dispatches to
+        # hundreds. Checked again with -O3:
+        #
+        #   g++-15  : pow(x,-0.5) emits a real libm call;
+        #             1.0/sqrt(x) emits hardware fsqrt, no call.
+        #   clang++ : both forms fold to hardware fsqrt.
+        #
+        # So the explicit form is a large win on GCC and a no-op on clang, i.e.
+        # it cannot regress. Measured 2.5-2.9x on the P2P operator, which is
+        # dominated by this single expression. ICPC not retested.
+        #
+        # R is left as sqrt() in case it gets used in expansions in future.
 
         light_ignore = []
         if sp.symbols("R") in matrix.free_symbols:
             code += f"{self.precision} R = sqrt(x*x + y*y + z*z);\n"
             light_ignore.append("R")
         if sp.symbols("Rinv") in matrix.free_symbols:
-            code += f"{self.precision} Rinv = pow(x*x + y*y + z*z, -0.5);\n"
+            code += f"{self.precision} Rinv = 1.0 / sqrt(x*x + y*y + z*z);\n"
             light_ignore.append("Rinv")
 
         if allocate:

@@ -192,6 +192,11 @@ int main(int argc, const char **argv) {
     // If direct calculation enabled, print the field to a file for checking
     if (!nodirect) {
       std::ofstream fieldout(field_filename);
+      // Default ostream precision is 6 significant figures, which floors any
+      // relative error computed from this file at ~1e-7. At high expansion
+      // order the solver is well below that, so the default silently reports
+      // the file's rounding rather than the method's accuracy.
+      fieldout << std::setprecision(17);
       for (size_t i = 0; i < Nparticles; i++) {
 	for(int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
 	  fieldout << F_exact[FMMGEN_OUTPUTSIZE * i + k] << "," << F_approx[FMMGEN_OUTPUTSIZE * i + k] << ",";

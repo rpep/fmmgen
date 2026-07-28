@@ -16,9 +16,9 @@ Ms[3] += z*M[0] + M[3];
 }
 
 void M2L_1(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[4];
-double Dtmp0 = pow(Rinv, 3.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
 D[0] = Rinv;
 D[1] = -Dtmp0*x;
 D[2] = -Dtmp0*y;
@@ -47,10 +47,10 @@ F[3] += -L[3];
 }
 
 void M2P_1(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0;
-double Ftmp2 = 3.0*pow(Rinv, 5.0);
+double Ftmp2 = 3.0*(Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp3 = Ftmp2*M[2];
 double Ftmp4 = x*y;
 double Ftmp5 = Ftmp2*M[3];
@@ -64,8 +64,8 @@ F[3] += Ftmp0*z*M[0] + Ftmp0*M[3] - Ftmp3*y*z - Ftmp5*(z*z) - Ftmp7*x*z;
 }
 
 void P2P(double x, double y, double z, double * S, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0)*S[0];
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv)*S[0];
 F[0] += Rinv*S[0];
 F[1] += Ftmp0*x;
 F[2] += Ftmp0*y;
@@ -107,10 +107,10 @@ Ms[9] += Mstmp2*(z*z) + z*M[3] + M[9];
 }
 
 void M2L_2(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[10];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = 3.0*Dtmp1;
 double Dtmp3 = Dtmp2*x;
 D[0] = Rinv;
@@ -165,10 +165,10 @@ F[3] += -x*L[6] - y*L[8] - z*L[9] - L[3];
 }
 
 void M2P_2(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0;
-double Ftmp2 = pow(Rinv, 5.0);
+double Ftmp2 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp3 = (x*x);
 double Ftmp4 = 3.0*Ftmp2;
 double Ftmp5 = Ftmp3*Ftmp4;
@@ -181,7 +181,7 @@ double Ftmp11 = Ftmp4*z;
 double Ftmp12 = Ftmp4*x;
 double Ftmp13 = Ftmp12*y;
 double Ftmp14 = Ftmp11*M[3];
-double Ftmp15 = pow(Rinv, 7.0);
+double Ftmp15 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp16 = 15.0*Ftmp15;
 double Ftmp17 = -Ftmp16*Ftmp6;
 double Ftmp18 = (Ftmp17 + Ftmp4)*M[7];
@@ -275,17 +275,17 @@ Ms[19] += Mstmp15*(z*z*z) + Mstmp18*M[3] + z*M[9] + M[19];
 }
 
 void M2L_3(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[20];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = Dtmp3*x;
 double Dtmp5 = (y*y);
 double Dtmp6 = y*z;
 double Dtmp7 = 9.0*Dtmp1;
-double Dtmp8 = 15.0*pow(Rinv, 7.0);
+double Dtmp8 = 15.0*(Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp9 = -Dtmp2*Dtmp8;
 double Dtmp10 = Dtmp3 + Dtmp9;
 double Dtmp11 = -Dtmp5*Dtmp8;
@@ -400,12 +400,12 @@ F[3] += -Ftmp11 - Ftmp13 - Ftmp14*L[15] - Ftmp15*L[18] - Ftmp4 - Ftmp7*L[19] - x
 }
 
 void M2P_3(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0*M[1];
 double Ftmp2 = Ftmp0*M[2];
 double Ftmp3 = Ftmp0*M[3];
-double Ftmp4 = pow(Rinv, 5.0);
+double Ftmp4 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp5 = 3.0*Ftmp4;
 double Ftmp6 = Ftmp5*M[5];
 double Ftmp7 = Ftmp6*y;
@@ -413,7 +413,7 @@ double Ftmp8 = Ftmp5*z;
 double Ftmp9 = Ftmp8*M[6];
 double Ftmp10 = Ftmp8*M[8];
 double Ftmp11 = x*y;
-double Ftmp12 = pow(Rinv, 7.0);
+double Ftmp12 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp13 = 15.0*Ftmp12;
 double Ftmp14 = Ftmp13*M[14];
 double Ftmp15 = Ftmp11*Ftmp14;
@@ -454,7 +454,7 @@ double Ftmp49 = y*z;
 double Ftmp50 = z*M[8];
 double Ftmp51 = Ftmp11*Ftmp13;
 double Ftmp52 = z*M[6];
-double Ftmp53 = 105.0*pow(Rinv, 9.0);
+double Ftmp53 = 105.0*(Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp54 = Ftmp16*Ftmp53;
 double Ftmp55 = Ftmp34*M[7];
 double Ftmp56 = Ftmp42*M[9];
@@ -641,17 +641,17 @@ Ms[34] += Mstmp36*M[9] + Mstmp43*(z*z*z*z) + Mstmp47*M[3] + z*M[19] + M[34];
 }
 
 void M2L_4(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[35];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = Dtmp3*x;
 double Dtmp5 = (y*y);
 double Dtmp6 = y*z;
 double Dtmp7 = 9.0*Dtmp1;
-double Dtmp8 = pow(Rinv, 7.0);
+double Dtmp8 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp9 = 15.0*Dtmp8;
 double Dtmp10 = -Dtmp2*Dtmp9;
 double Dtmp11 = Dtmp10 + Dtmp3;
@@ -659,7 +659,7 @@ double Dtmp12 = -Dtmp5*Dtmp9;
 double Dtmp13 = Dtmp12 + Dtmp3;
 double Dtmp14 = x;
 double Dtmp15 = 90.0*Dtmp8;
-double Dtmp16 = 105.0*pow(Rinv, 9.0);
+double Dtmp16 = 105.0*(Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp17 = 45.0*Dtmp8;
 double Dtmp18 = Dtmp16*Dtmp2;
 double Dtmp19 = -Dtmp18;
@@ -876,19 +876,19 @@ F[3] += -Ftmp12*L[19] - Ftmp13*L[34] - Ftmp19 - Ftmp21 - Ftmp24 - Ftmp25 - Ftmp2
 }
 
 void M2P_4(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0*M[1];
 double Ftmp2 = Ftmp0*M[2];
 double Ftmp3 = Ftmp0*M[3];
-double Ftmp4 = pow(Rinv, 5.0);
+double Ftmp4 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp5 = 3.0*Ftmp4;
 double Ftmp6 = Ftmp5*M[5];
 double Ftmp7 = Ftmp6*y;
 double Ftmp8 = Ftmp5*z;
 double Ftmp9 = Ftmp8*M[6];
 double Ftmp10 = Ftmp8*M[8];
-double Ftmp11 = pow(Rinv, 7.0);
+double Ftmp11 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp12 = 15.0*Ftmp11;
 double Ftmp13 = Ftmp12*M[14];
 double Ftmp14 = x*z;
@@ -923,7 +923,7 @@ double Ftmp42 = Ftmp37 + Ftmp5;
 double Ftmp43 = Ftmp42;
 double Ftmp44 = Ftmp43*M[15];
 double Ftmp45 = Ftmp43*M[18];
-double Ftmp46 = pow(Rinv, 9.0);
+double Ftmp46 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp47 = 35.0*Ftmp46;
 double Ftmp48 = 3.0*M[28];
 double Ftmp49 = Ftmp48*(5.0*Ftmp11 - Ftmp20*Ftmp47);
@@ -986,7 +986,7 @@ double Ftmp105 = Ftmp40*Ftmp60;
 double Ftmp106 = Ftmp101*M[15];
 double Ftmp107 = y*M[33];
 double Ftmp108 = 315.0*Ftmp46;
-double Ftmp109 = pow(Rinv, 11.0);
+double Ftmp109 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp110 = 945.0*Ftmp109;
 double Ftmp111 = -Ftmp110*Ftmp20;
 double Ftmp112 = Ftmp108 + Ftmp111;
@@ -1306,17 +1306,17 @@ Ms[55] += Mstmp103*M[3] + Mstmp43*M[19] + Mstmp84*M[9] + Mstmp93*(z*z*z*z*z) + z
 }
 
 void M2L_5(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[56];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = Dtmp3*x;
 double Dtmp5 = (y*y);
 double Dtmp6 = y*z;
 double Dtmp7 = 9.0*Dtmp1;
-double Dtmp8 = pow(Rinv, 7.0);
+double Dtmp8 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp9 = 15.0*Dtmp8;
 double Dtmp10 = -Dtmp2*Dtmp9;
 double Dtmp11 = Dtmp10 + Dtmp3;
@@ -1326,7 +1326,7 @@ double Dtmp14 = x;
 double Dtmp15 = Dtmp6*x;
 double Dtmp16 = 90.0*Dtmp8;
 double Dtmp17 = (x*x*x*x);
-double Dtmp18 = pow(Rinv, 9.0);
+double Dtmp18 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp19 = 105.0*Dtmp18;
 double Dtmp20 = 45.0*Dtmp8;
 double Dtmp21 = Dtmp19*Dtmp2;
@@ -1339,7 +1339,7 @@ double Dtmp27 = Dtmp20 + Dtmp26;
 double Dtmp28 = (y*y*y*y);
 double Dtmp29 = 225.0*Dtmp8;
 double Dtmp30 = Dtmp18*Dtmp2;
-double Dtmp31 = 945.0*pow(Rinv, 11.0);
+double Dtmp31 = 945.0*(Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp32 = Dtmp17*Dtmp31;
 double Dtmp33 = Dtmp20 - 630.0*Dtmp30 + Dtmp32;
 double Dtmp34 = 315.0*Dtmp18;
@@ -1711,11 +1711,11 @@ F[3] += -Ftmp16*L[19] - Ftmp18*L[34] - Ftmp19*L[55] - Ftmp27 - Ftmp29 - Ftmp31 -
 }
 
 void M2P_5(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0;
-double Ftmp2 = pow(Rinv, 5.0);
-double Ftmp3 = pow(Rinv, 7.0);
+double Ftmp2 = (Rinv*Rinv*Rinv*Rinv*Rinv);
+double Ftmp3 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp4 = 15.0*Ftmp3;
 double Ftmp5 = x*z;
 double Ftmp6 = Ftmp5*y;
@@ -1737,7 +1737,7 @@ double Ftmp21 = Ftmp19 + Ftmp8;
 double Ftmp22 = Ftmp14 + Ftmp18;
 double Ftmp23 = Ftmp16 + Ftmp18;
 double Ftmp24 = 45.0*Ftmp3;
-double Ftmp25 = pow(Rinv, 9.0);
+double Ftmp25 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp26 = 105.0*Ftmp25;
 double Ftmp27 = Ftmp26*Ftmp7;
 double Ftmp28 = -Ftmp27;
@@ -1756,7 +1756,7 @@ double Ftmp40 = Ftmp12*Ftmp26;
 double Ftmp41 = -Ftmp40;
 double Ftmp42 = Ftmp24 + Ftmp41;
 double Ftmp43 = Ftmp38*Ftmp42;
-double Ftmp44 = pow(Rinv, 11.0);
+double Ftmp44 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp45 = Ftmp12*Ftmp44;
 double Ftmp46 = -315.0*Ftmp45;
 double Ftmp47 = Ftmp26 + Ftmp46;
@@ -2324,10 +2324,10 @@ Ms[83] += Mstmp161*M[9] + Mstmp170*(z*z*z*z*z*z) + Mstmp184*M[3] + Mstmp43*M[34]
 }
 
 void M2L_6(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[84];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = x*y;
@@ -2335,7 +2335,7 @@ double Dtmp5 = x*z;
 double Dtmp6 = (y*y);
 double Dtmp7 = y*z;
 double Dtmp8 = 9.0*Dtmp1;
-double Dtmp9 = pow(Rinv, 7.0);
+double Dtmp9 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp10 = 15.0*Dtmp9;
 double Dtmp11 = -Dtmp10*Dtmp2;
 double Dtmp12 = Dtmp11 + Dtmp3;
@@ -2345,7 +2345,7 @@ double Dtmp15 = x;
 double Dtmp16 = Dtmp7*x;
 double Dtmp17 = 90.0*Dtmp9;
 double Dtmp18 = (x*x*x*x);
-double Dtmp19 = pow(Rinv, 9.0);
+double Dtmp19 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp20 = 105.0*Dtmp19;
 double Dtmp21 = 45.0*Dtmp9;
 double Dtmp22 = Dtmp2*Dtmp20;
@@ -2360,7 +2360,7 @@ double Dtmp30 = Dtmp15*z;
 double Dtmp31 = (y*y*y*y);
 double Dtmp32 = 225.0*Dtmp9;
 double Dtmp33 = Dtmp19*Dtmp2;
-double Dtmp34 = pow(Rinv, 11.0);
+double Dtmp34 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp35 = 945.0*Dtmp34;
 double Dtmp36 = Dtmp18*Dtmp35;
 double Dtmp37 = Dtmp21 - 630.0*Dtmp33 + Dtmp36;
@@ -2970,11 +2970,11 @@ F[3] += -Ftmp100*L[52] - Ftmp101*L[79] - Ftmp102*L[74] - Ftmp103*L[69] - Ftmp104
 }
 
 void M2P_6(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0;
-double Ftmp2 = pow(Rinv, 5.0);
-double Ftmp3 = pow(Rinv, 7.0);
+double Ftmp2 = (Rinv*Rinv*Rinv*Rinv*Rinv);
+double Ftmp3 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp4 = 15.0*Ftmp3;
 double Ftmp5 = x*y;
 double Ftmp6 = Ftmp5*z;
@@ -2996,7 +2996,7 @@ double Ftmp21 = Ftmp19 + Ftmp8;
 double Ftmp22 = Ftmp14 + Ftmp18;
 double Ftmp23 = Ftmp16 + Ftmp18;
 double Ftmp24 = 45.0*Ftmp3;
-double Ftmp25 = pow(Rinv, 9.0);
+double Ftmp25 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp26 = 105.0*Ftmp25;
 double Ftmp27 = Ftmp26*Ftmp7;
 double Ftmp28 = -Ftmp27;
@@ -3014,7 +3014,7 @@ double Ftmp39 = Ftmp32 + Ftmp4;
 double Ftmp40 = Ftmp12*Ftmp26;
 double Ftmp41 = -Ftmp40;
 double Ftmp42 = Ftmp24 + Ftmp41;
-double Ftmp43 = pow(Rinv, 11.0);
+double Ftmp43 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp44 = Ftmp12*Ftmp43;
 double Ftmp45 = -315.0*Ftmp44;
 double Ftmp46 = Ftmp26 + Ftmp45;
@@ -3929,10 +3929,10 @@ Ms[119] += Mstmp187*M[19] + Mstmp275*M[9] + Mstmp288*(z*z*z*z*z*z*z) + Mstmp309*
 }
 
 void M2L_7(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[120];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = x*y;
@@ -3940,7 +3940,7 @@ double Dtmp5 = x*z;
 double Dtmp6 = (y*y);
 double Dtmp7 = y*z;
 double Dtmp8 = 9.0*Dtmp1;
-double Dtmp9 = pow(Rinv, 7.0);
+double Dtmp9 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp10 = 15.0*Dtmp9;
 double Dtmp11 = -Dtmp10*Dtmp2;
 double Dtmp12 = Dtmp11 + Dtmp3;
@@ -3950,7 +3950,7 @@ double Dtmp15 = x;
 double Dtmp16 = Dtmp7*x;
 double Dtmp17 = 90.0*Dtmp9;
 double Dtmp18 = (x*x*x*x);
-double Dtmp19 = pow(Rinv, 9.0);
+double Dtmp19 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp20 = 105.0*Dtmp19;
 double Dtmp21 = 45.0*Dtmp9;
 double Dtmp22 = Dtmp2*Dtmp20;
@@ -3965,7 +3965,7 @@ double Dtmp30 = Dtmp15*z;
 double Dtmp31 = (y*y*y*y);
 double Dtmp32 = 225.0*Dtmp9;
 double Dtmp33 = Dtmp19*Dtmp2;
-double Dtmp34 = pow(Rinv, 11.0);
+double Dtmp34 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp35 = 945.0*Dtmp34;
 double Dtmp36 = Dtmp18*Dtmp35;
 double Dtmp37 = Dtmp21 - 630.0*Dtmp33 + Dtmp36;
@@ -4900,19 +4900,19 @@ F[3] += -Ftmp101*L[80] - Ftmp102*L[116] - Ftmp103*L[115] - Ftmp113 - Ftmp114 - F
 }
 
 void M2P_7(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0*M[1];
 double Ftmp2 = Ftmp0*M[2];
 double Ftmp3 = Ftmp0*M[3];
-double Ftmp4 = pow(Rinv, 5.0);
+double Ftmp4 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp5 = 3.0*Ftmp4;
 double Ftmp6 = Ftmp5*M[5];
 double Ftmp7 = Ftmp6*y;
 double Ftmp8 = Ftmp5*z;
 double Ftmp9 = Ftmp8*M[6];
 double Ftmp10 = Ftmp8*M[8];
-double Ftmp11 = pow(Rinv, 7.0);
+double Ftmp11 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp12 = 15.0*Ftmp11;
 double Ftmp13 = Ftmp12*M[14];
 double Ftmp14 = x*y;
@@ -4948,7 +4948,7 @@ double Ftmp43 = Ftmp42;
 double Ftmp44 = Ftmp43*M[15];
 double Ftmp45 = Ftmp43*M[18];
 double Ftmp46 = 3.0*y;
-double Ftmp47 = pow(Rinv, 9.0);
+double Ftmp47 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp48 = 35.0*Ftmp47;
 double Ftmp49 = (5.0*Ftmp11 - Ftmp20*Ftmp48)*M[28];
 double Ftmp50 = Ftmp46*Ftmp49;
@@ -4984,7 +4984,7 @@ double Ftmp79 = Ftmp78*z;
 double Ftmp80 = Ftmp56*M[31];
 double Ftmp81 = Ftmp80*z;
 double Ftmp82 = 315.0*Ftmp47;
-double Ftmp83 = pow(Rinv, 11.0);
+double Ftmp83 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp84 = 945.0*Ftmp83;
 double Ftmp85 = Ftmp16*Ftmp84;
 double Ftmp86 = -Ftmp85;
@@ -6487,10 +6487,10 @@ Ms[164] += Mstmp187*M[34] + Mstmp315*M[19] + Mstmp43*M[83] + Mstmp435*M[9] + Mst
 }
 
 void M2L_8(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[165];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = x*y;
@@ -6498,7 +6498,7 @@ double Dtmp5 = x*z;
 double Dtmp6 = (y*y);
 double Dtmp7 = y*z;
 double Dtmp8 = 9.0*Dtmp1;
-double Dtmp9 = pow(Rinv, 7.0);
+double Dtmp9 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp10 = 15.0*Dtmp9;
 double Dtmp11 = -Dtmp10*Dtmp2;
 double Dtmp12 = Dtmp11 + Dtmp3;
@@ -6508,7 +6508,7 @@ double Dtmp15 = x;
 double Dtmp16 = Dtmp7*x;
 double Dtmp17 = 90.0*Dtmp9;
 double Dtmp18 = (x*x*x*x);
-double Dtmp19 = pow(Rinv, 9.0);
+double Dtmp19 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp20 = 105.0*Dtmp19;
 double Dtmp21 = 45.0*Dtmp9;
 double Dtmp22 = Dtmp2*Dtmp20;
@@ -6523,7 +6523,7 @@ double Dtmp30 = Dtmp15*z;
 double Dtmp31 = (y*y*y*y);
 double Dtmp32 = 225.0*Dtmp9;
 double Dtmp33 = Dtmp19*Dtmp2;
-double Dtmp34 = pow(Rinv, 11.0);
+double Dtmp34 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp35 = 945.0*Dtmp34;
 double Dtmp36 = Dtmp18*Dtmp35;
 double Dtmp37 = Dtmp21 - 630.0*Dtmp33 + Dtmp36;
@@ -7882,19 +7882,19 @@ F[3] += -Ftmp100*L[147] - Ftmp108*L[65] - Ftmp109*L[98] - Ftmp110*L[140] - Ftmp1
 }
 
 void M2P_8(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0*M[1];
 double Ftmp2 = Ftmp0*M[2];
 double Ftmp3 = Ftmp0*M[3];
-double Ftmp4 = pow(Rinv, 5.0);
+double Ftmp4 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp5 = 3.0*Ftmp4;
 double Ftmp6 = Ftmp5*M[5];
 double Ftmp7 = Ftmp6*y;
 double Ftmp8 = Ftmp5*z;
 double Ftmp9 = Ftmp8*M[6];
 double Ftmp10 = Ftmp8*M[8];
-double Ftmp11 = pow(Rinv, 7.0);
+double Ftmp11 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp12 = 15.0*Ftmp11;
 double Ftmp13 = Ftmp12*M[14];
 double Ftmp14 = x*y;
@@ -7930,7 +7930,7 @@ double Ftmp43 = Ftmp42;
 double Ftmp44 = Ftmp43*M[15];
 double Ftmp45 = Ftmp43*M[18];
 double Ftmp46 = 3.0*y;
-double Ftmp47 = pow(Rinv, 9.0);
+double Ftmp47 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp48 = 35.0*Ftmp47;
 double Ftmp49 = (5.0*Ftmp11 - Ftmp20*Ftmp48)*M[28];
 double Ftmp50 = Ftmp46*Ftmp49;
@@ -7966,7 +7966,7 @@ double Ftmp79 = Ftmp78*z;
 double Ftmp80 = Ftmp56*M[31];
 double Ftmp81 = Ftmp80*z;
 double Ftmp82 = 315.0*Ftmp47;
-double Ftmp83 = pow(Rinv, 11.0);
+double Ftmp83 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp84 = 945.0*Ftmp83;
 double Ftmp85 = Ftmp16*Ftmp84;
 double Ftmp86 = -Ftmp85;
@@ -10203,10 +10203,10 @@ Ms[219] += Mstmp187*M[55] + Mstmp315*M[34] + Mstmp43*M[119] + Mstmp493*M[19] + M
 }
 
 void M2L_9(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[220];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = x*y;
@@ -10214,7 +10214,7 @@ double Dtmp5 = x*z;
 double Dtmp6 = (y*y);
 double Dtmp7 = y*z;
 double Dtmp8 = 9.0*Dtmp1;
-double Dtmp9 = pow(Rinv, 7.0);
+double Dtmp9 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp10 = 15.0*Dtmp9;
 double Dtmp11 = -Dtmp10*Dtmp2;
 double Dtmp12 = Dtmp11 + Dtmp3;
@@ -10224,7 +10224,7 @@ double Dtmp15 = x;
 double Dtmp16 = Dtmp7*x;
 double Dtmp17 = 90.0*Dtmp9;
 double Dtmp18 = (x*x*x*x);
-double Dtmp19 = pow(Rinv, 9.0);
+double Dtmp19 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp20 = 105.0*Dtmp19;
 double Dtmp21 = 45.0*Dtmp9;
 double Dtmp22 = Dtmp2*Dtmp20;
@@ -10239,7 +10239,7 @@ double Dtmp30 = Dtmp15*z;
 double Dtmp31 = (y*y*y*y);
 double Dtmp32 = 225.0*Dtmp9;
 double Dtmp33 = Dtmp19*Dtmp2;
-double Dtmp34 = pow(Rinv, 11.0);
+double Dtmp34 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp35 = 945.0*Dtmp34;
 double Dtmp36 = Dtmp18*Dtmp35;
 double Dtmp37 = Dtmp21 - 630.0*Dtmp33 + Dtmp36;
@@ -12135,11 +12135,11 @@ F[3] += -Ftmp100*L[92] - Ftmp101*L[128] - Ftmp102*L[173] - Ftmp114*L[44] - Ftmp1
 }
 
 void M2P_9(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0;
-double Ftmp2 = pow(Rinv, 5.0);
-double Ftmp3 = pow(Rinv, 7.0);
+double Ftmp2 = (Rinv*Rinv*Rinv*Rinv*Rinv);
+double Ftmp3 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp4 = 15.0*Ftmp3;
 double Ftmp5 = x*y;
 double Ftmp6 = Ftmp5*z;
@@ -12161,7 +12161,7 @@ double Ftmp21 = Ftmp19 + Ftmp8;
 double Ftmp22 = Ftmp14 + Ftmp18;
 double Ftmp23 = Ftmp16 + Ftmp18;
 double Ftmp24 = 45.0*Ftmp3;
-double Ftmp25 = pow(Rinv, 9.0);
+double Ftmp25 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp26 = 105.0*Ftmp25;
 double Ftmp27 = Ftmp26*Ftmp7;
 double Ftmp28 = -Ftmp27;
@@ -12179,7 +12179,7 @@ double Ftmp39 = Ftmp32 + Ftmp4;
 double Ftmp40 = Ftmp12*Ftmp26;
 double Ftmp41 = -Ftmp40;
 double Ftmp42 = Ftmp24 + Ftmp41;
-double Ftmp43 = pow(Rinv, 11.0);
+double Ftmp43 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp44 = Ftmp12*Ftmp43;
 double Ftmp45 = -315.0*Ftmp44;
 double Ftmp46 = Ftmp26 + Ftmp45;
@@ -15074,10 +15074,10 @@ Ms[285] += Mstmp1007*M[3] + Mstmp187*M[83] + Mstmp315*M[55] + Mstmp43*M[164] + M
 }
 
 void M2L_10(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[286];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = x*y;
@@ -15085,7 +15085,7 @@ double Dtmp5 = x*z;
 double Dtmp6 = (y*y);
 double Dtmp7 = y*z;
 double Dtmp8 = 9.0*Dtmp1;
-double Dtmp9 = pow(Rinv, 7.0);
+double Dtmp9 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp10 = 15.0*Dtmp9;
 double Dtmp11 = -Dtmp10*Dtmp2;
 double Dtmp12 = Dtmp11 + Dtmp3;
@@ -15095,7 +15095,7 @@ double Dtmp15 = x;
 double Dtmp16 = Dtmp7*x;
 double Dtmp17 = 90.0*Dtmp9;
 double Dtmp18 = (x*x*x*x);
-double Dtmp19 = pow(Rinv, 9.0);
+double Dtmp19 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp20 = 105.0*Dtmp19;
 double Dtmp21 = 45.0*Dtmp9;
 double Dtmp22 = Dtmp2*Dtmp20;
@@ -15110,7 +15110,7 @@ double Dtmp30 = Dtmp15*z;
 double Dtmp31 = (y*y*y*y);
 double Dtmp32 = 225.0*Dtmp9;
 double Dtmp33 = Dtmp19*Dtmp2;
-double Dtmp34 = pow(Rinv, 11.0);
+double Dtmp34 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp35 = 945.0*Dtmp34;
 double Dtmp36 = Dtmp18*Dtmp35;
 double Dtmp37 = Dtmp21 - 630.0*Dtmp33 + Dtmp36;
@@ -17655,11 +17655,11 @@ F[3] += -Ftmp100*L[110] - Ftmp101*L[154] - Ftmp102*L[208] - Ftmp103*L[273] - Ftm
 }
 
 void M2P_10(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0;
-double Ftmp2 = pow(Rinv, 5.0);
-double Ftmp3 = pow(Rinv, 7.0);
+double Ftmp2 = (Rinv*Rinv*Rinv*Rinv*Rinv);
+double Ftmp3 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp4 = 15.0*Ftmp3;
 double Ftmp5 = x*y;
 double Ftmp6 = Ftmp5*z;
@@ -17681,7 +17681,7 @@ double Ftmp21 = Ftmp19 + Ftmp8;
 double Ftmp22 = Ftmp14 + Ftmp18;
 double Ftmp23 = Ftmp16 + Ftmp18;
 double Ftmp24 = 45.0*Ftmp3;
-double Ftmp25 = pow(Rinv, 9.0);
+double Ftmp25 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp26 = 105.0*Ftmp25;
 double Ftmp27 = Ftmp26*Ftmp7;
 double Ftmp28 = -Ftmp27;
@@ -17699,7 +17699,7 @@ double Ftmp39 = Ftmp32 + Ftmp4;
 double Ftmp40 = Ftmp12*Ftmp26;
 double Ftmp41 = -Ftmp40;
 double Ftmp42 = Ftmp24 + Ftmp41;
-double Ftmp43 = pow(Rinv, 11.0);
+double Ftmp43 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp44 = Ftmp12*Ftmp43;
 double Ftmp45 = -315.0*Ftmp44;
 double Ftmp46 = Ftmp26 + Ftmp45;
@@ -21805,10 +21805,10 @@ Ms[363] += Mstmp1045*M[19] + Mstmp1298*M[9] + Mstmp1319*(z*z*z*z*z*z*z*z*z*z*z) 
 }
 
 void M2L_11(double x, double y, double z, double * M, double * L) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
 double D[364];
-double Dtmp0 = pow(Rinv, 3.0);
-double Dtmp1 = pow(Rinv, 5.0);
+double Dtmp0 = (Rinv*Rinv*Rinv);
+double Dtmp1 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp2 = (x*x);
 double Dtmp3 = 3.0*Dtmp1;
 double Dtmp4 = x*y;
@@ -21816,7 +21816,7 @@ double Dtmp5 = x*z;
 double Dtmp6 = (y*y);
 double Dtmp7 = y*z;
 double Dtmp8 = 9.0*Dtmp1;
-double Dtmp9 = pow(Rinv, 7.0);
+double Dtmp9 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp10 = 15.0*Dtmp9;
 double Dtmp11 = -Dtmp10*Dtmp2;
 double Dtmp12 = Dtmp11 + Dtmp3;
@@ -21826,7 +21826,7 @@ double Dtmp15 = x;
 double Dtmp16 = Dtmp7*x;
 double Dtmp17 = 90.0*Dtmp9;
 double Dtmp18 = (x*x*x*x);
-double Dtmp19 = pow(Rinv, 9.0);
+double Dtmp19 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp20 = 105.0*Dtmp19;
 double Dtmp21 = 45.0*Dtmp9;
 double Dtmp22 = Dtmp2*Dtmp20;
@@ -21841,7 +21841,7 @@ double Dtmp30 = Dtmp15*z;
 double Dtmp31 = (y*y*y*y);
 double Dtmp32 = 225.0*Dtmp9;
 double Dtmp33 = Dtmp19*Dtmp2;
-double Dtmp34 = pow(Rinv, 11.0);
+double Dtmp34 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Dtmp35 = 945.0*Dtmp34;
 double Dtmp36 = Dtmp18*Dtmp35;
 double Dtmp37 = Dtmp21 - 630.0*Dtmp33 + Dtmp36;
@@ -25182,19 +25182,19 @@ F[3] += -Ftmp101 - Ftmp102 - Ftmp103 - Ftmp104 - Ftmp105 - Ftmp106 - Ftmp107 - F
 }
 
 void M2P_11(double x, double y, double z, double * M, double * F) {
-double Rinv = pow(x*x + y*y + z*z, -0.5);
-double Ftmp0 = pow(Rinv, 3.0);
+double Rinv = 1.0 / sqrt(x*x + y*y + z*z);
+double Ftmp0 = (Rinv*Rinv*Rinv);
 double Ftmp1 = Ftmp0*M[1];
 double Ftmp2 = Ftmp0*M[2];
 double Ftmp3 = Ftmp0*M[3];
-double Ftmp4 = pow(Rinv, 5.0);
+double Ftmp4 = (Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp5 = 3.0*Ftmp4;
 double Ftmp6 = Ftmp5*M[5];
 double Ftmp7 = Ftmp6*y;
 double Ftmp8 = Ftmp5*z;
 double Ftmp9 = Ftmp8*M[6];
 double Ftmp10 = Ftmp8*M[8];
-double Ftmp11 = pow(Rinv, 7.0);
+double Ftmp11 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp12 = 15.0*Ftmp11;
 double Ftmp13 = Ftmp12*M[14];
 double Ftmp14 = x*y;
@@ -25230,7 +25230,7 @@ double Ftmp43 = Ftmp42;
 double Ftmp44 = Ftmp43*M[15];
 double Ftmp45 = Ftmp43*M[18];
 double Ftmp46 = 3.0*y;
-double Ftmp47 = pow(Rinv, 9.0);
+double Ftmp47 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp48 = 35.0*Ftmp47;
 double Ftmp49 = (5.0*Ftmp11 - Ftmp20*Ftmp48)*M[28];
 double Ftmp50 = Ftmp46*Ftmp49;
@@ -25266,7 +25266,7 @@ double Ftmp79 = Ftmp78*z;
 double Ftmp80 = Ftmp56*M[31];
 double Ftmp81 = Ftmp80*z;
 double Ftmp82 = 315.0*Ftmp47;
-double Ftmp83 = pow(Rinv, 11.0);
+double Ftmp83 = (Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv*Rinv);
 double Ftmp84 = 945.0*Ftmp83;
 double Ftmp85 = Ftmp16*Ftmp84;
 double Ftmp86 = -Ftmp85;
