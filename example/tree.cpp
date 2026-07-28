@@ -37,7 +37,7 @@ Cell::Cell(const Cell& other) {
     this->level = other.level;
     this->child = other.child;
     std::copy(other.leaf.begin(), other.leaf.end(), std::back_inserter(this->leaf));
-    std::copy(other.child.begin(), other.child.end(), std::back_inserter(this->child));
+    // Removed duplicate child copy - line 38 already copied it
     this->nleaf = other.nleaf;
     this->nchild = other.nchild;
 }
@@ -185,6 +185,9 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
   double r = (xmax > ymax ? (xmax > zmax? xmax: zmax): (ymax > zmax ? ymax: zmax)) * 1.001;
   auto root = Cell(xavg, yavg, zavg, r, 0, order, 0, ncrit);
 
+  // Reserve capacity to avoid reallocations during tree construction
+  // Estimate: ~8 cells per ncrit particles
+  cells.reserve(nparticles / ncrit * 8);
   cells.push_back(root);
   for(size_t i = 0; i < particles.size(); i++) {
     curr = 0;
@@ -213,11 +216,12 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
   tree.cells = cells;
   tree.particles = particles;
 
-  // Create interaction lists, and sort M2L list for cache efficiency.
+  // Create interaction lists, and sort M2L list by TARGET for cache efficiency.
+  // Sorting by target (second) improves cache locality for writes to cells[A].L
   interact_dehnen_lazy(0, 0, tree.cells, particles, theta, order, ncrit, tree.M2L_list, tree.P2P_list);
   std::sort(tree.M2L_list.begin(), tree.M2L_list.end(),
          [](std::pair<size_t, size_t> &left, std::pair<size_t, size_t> &right) {
-              return left.first < right.first;
+              return left.second < right.second;  // Sort by target (A)
              }
          );
 
@@ -229,6 +233,19 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
     tree.cells[i].M = &tree.M[i*Msize(order, FMMGEN_SOURCEORDER)];
     tree.cells[i].L = &tree.L[i*Lsize(order, FMMGEN_SOURCEORDER)];
   }
+
+  // Precompute tree levels for efficient parallel M2M and L2L
+  size_t max_level = 0;
+  for(size_t c = 0; c < tree.cells.size(); c++) {
+    if (tree.cells[c].level > max_level) {
+      max_level = tree.cells[c].level;
+    }
+  }
+  tree.levels.resize(max_level + 1);
+  for(size_t c = 0; c < tree.cells.size(); c++) {
+    tree.levels[tree.cells[c].level].push_back(c);
+  }
+
   return tree;
 }
 
@@ -251,8 +268,12 @@ void Tree::compute_field_fmm(double *F) {
     evaluate_P2M(particles, cells, 0, ncrit, order);
   }
 
-  evaluate_M2M(particles, cells, order);
-	
+  // M2M with level-synchronous parallelization
+  #pragma omp parallel
+  {
+    evaluate_M2M(particles, cells, levels, order);
+  }
+
   #ifdef FMMLIBDEBUG
   M_sanity_check(cells);
   #endif
@@ -263,7 +284,12 @@ void Tree::compute_field_fmm(double *F) {
     evaluate_P2P_lazy(cells, particles,P2P_list, F);
   }
 
-  evaluate_L2L(cells, order);
+  // L2L with level-synchronous parallelization
+  #pragma omp parallel
+  {
+    evaluate_L2L(cells, levels, order);
+  }
+
   #pragma omp parallel
   {
     evaluate_L2P(particles, cells, F, ncrit, order);
@@ -280,7 +306,11 @@ void Tree::compute_field_bh(double *F) {
     evaluate_P2M(particles, cells, 0, ncrit, order);
   }
 
-  evaluate_M2M(particles, cells, order);
+  // M2M with level-synchronous parallelization
+  #pragma omp parallel
+  {
+    evaluate_M2M(particles, cells, levels, order);
+  }
 
   #ifdef FMMLIBDEBUG
   M_sanity_check(cells);

@@ -20,10 +20,11 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
 		  size_t cell, size_t ncrit, size_t exporder);
 
 void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
+                  const std::vector<std::vector<size_t>> &levels, size_t exporder);
+
+
+void evaluate_L2L(std::vector<Cell> &cells, const std::vector<std::vector<size_t>> &levels,
                   size_t exporder);
-
-
-void evaluate_L2L(std::vector<Cell> &cells, size_t exporder);
 
 void evaluate_L2P(std::vector<Particle> &particles, std::vector<Cell> &cells,
                   double *F, size_t ncrit, size_t exporder);

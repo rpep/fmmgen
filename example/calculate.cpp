@@ -24,8 +24,12 @@ void M_sanity_check(const std::vector<Cell> &cells) {
 void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particle> &particles, double *F) {
   // A - target
   // B - source
+  // Several (A, B) pairs in P2P_list share the same target cell A, so writing
+  // straight into F[l1] races between threads. Accumulate this cell-pair's
+  // contribution into a local buffer and add it atomically once per target
+  // particle instead.
   for (size_t p1 = 0; p1 < cells[A].nleaf; p1++) {
-    //double F_p[FMMGEN_OUTPUTSIZE] = {0.0};
+    double F_p[FMMGEN_OUTPUTSIZE] = {0.0};
     size_t l1 = cells[A].leaf[p1];
     for (size_t p2 = 0; p2 < cells[B].nleaf; p2++) {
       size_t l2 = cells[B].leaf[p2];
@@ -33,8 +37,12 @@ void P2P_Cells(size_t A, size_t B, std::vector<Cell> &cells, std::vector<Particl
       	double dx = (particles[l1].r[0] - particles[l2].r[0]);
       	double dy = (particles[l1].r[1] - particles[l2].r[1]);
       	double dz = (particles[l1].r[2] - particles[l2].r[2]);
-      	P2P(dx, dy, dz, particles[l2].S, &F[FMMGEN_OUTPUTSIZE*l1]);
+      	P2P(dx, dy, dz, particles[l2].S, F_p);
       }
+    }
+    for (int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
+      #pragma omp atomic
+      F[FMMGEN_OUTPUTSIZE*l1 + k] += F_p[k];
     }
   }
 }
@@ -134,13 +142,19 @@ void interact_dehnen_lazy(const size_t A, const size_t B,
 
 void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
               size_t cell, size_t ncrit, size_t exporder) {
+  // Allocate thread-local temporary array once per thread
+  size_t msize = Msize(exporder, FMMGEN_SOURCEORDER);
+  thread_local std::vector<double> M_thread;
+
+  // Ensure thread-local buffer is sized correctly
+  if (M_thread.size() != msize) {
+    M_thread.resize(msize);
+  }
+
+  double *M = M_thread.data();
+
   #pragma omp for
   for(size_t c = 0; c < cells.size(); c++) {
-    //std::cout << "Cell " << c << std::endl;
-    //std::cout << "  Msize = " << Msize(exporder, FMMGEN_SOURCEORDER) << std::endl;
-    size_t msize = Msize(exporder, FMMGEN_SOURCEORDER);
-    double *M = new double[msize]();
-
     if (cells[c].nleaf < ncrit) {
       for(size_t i = 0; i < cells[c].nleaf; i++) {
         size_t l = cells[c].leaf[i];
@@ -150,58 +164,76 @@ void evaluate_P2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
         double dy = (cells[c].y - particles[l].r[1]);
         double dz = (cells[c].z - particles[l].r[2]);
         for(int k = 0; k < FMMGEN_SOURCESIZE; k++) {
-          // std::cout << particles[l].S[k] << std::endl;
           M[k] = particles[l].S[k];
         }
         M2M(dx, dy, dz, M, cells[c].M, exporder);
       }
    }
-   delete[] M;
   }
 }
 
 void evaluate_M2M(std::vector<Particle> &particles, std::vector<Cell> &cells,
-                  size_t exporder) {
+                  const std::vector<std::vector<size_t>> &levels, size_t exporder) {
   /*
-  evaluate_M2M(particles, cells)
+  evaluate_M2M with level-synchronous parallel traversal.
 
-  This function evaluates the multipole to
-  multipole kernel. It does this by working up the
-  tree from the leaf nodes, which is possible
-  by iterating backwards through the nodes because
-  of the way the tree is constructed.
+  Process tree bottom-up, parallelizing within each level.
+  Cells at the same level can be processed in parallel since
+  they write to different parent cells.
   */
-  // #pragma omp for schedule(dynamic)
-  // Can't currently go up the tree in parallel.
-  // Needs to be recursive or summing not correct.
-
-  // Dehnen definition:
-  // M_m(z_p) = (z_p - z_c)^n / n! M_{m - n}
-  for (size_t c = cells.size() - 1; c > 0; c--) {
-    size_t p = cells[c].parent;
-    double dx = (cells[p].x - cells[c].x);
-    double dy = (cells[p].y - cells[c].y);
-    double dz = (cells[p].z - cells[c].z);
-    M2M(dx, dy, dz, cells[c].M, cells[p].M, exporder);
+  // Bottom-up: start from deepest level and work up to level 1 (skip root at level 0).
+  //
+  // Parallelise over the PARENT cells at level l-1, not over the children at
+  // level l. Siblings share a parent, so distributing children across threads
+  // means up to 8 threads accumulate into the same cells[p].M concurrently.
+  // Iterating parents gives each thread exclusive ownership of the cell it
+  // writes, which is the same pattern evaluate_L2L already uses.
+  for (int l = levels.size() - 1; l > 0; l--) {
+    #pragma omp for schedule(static)
+    for (size_t i = 0; i < levels[l-1].size(); i++) {
+      size_t p = levels[l-1][i];
+      for (int octant = 0; octant < 8; octant++) {
+        if (cells[p].nchild & (1 << octant)) {
+          size_t c = cells[p].child[octant];
+          double dx = (cells[p].x - cells[c].x);
+          double dy = (cells[p].y - cells[c].y);
+          double dz = (cells[p].z - cells[c].z);
+          M2M(dx, dy, dz, cells[c].M, cells[p].M, exporder);
+        }
+      }
+    }
   }
 }
 
 
 void evaluate_M2L_lazy(std::vector<Cell> &cells,
                        std::vector<std::pair<size_t, size_t>> &M2L_list, size_t order) {
+    // Use the fact that we're already inside a parallel region from tree.cpp
+    // Just use #pragma omp for to distribute work
     #pragma omp for
     for(size_t i = 0; i < M2L_list.size(); i++) {
-    	size_t B = M2L_list[i].first;
-    	size_t A = M2L_list[i].second;
-      // Dehnen definition:
-      // F_n(z_B) = M_m(z_A) * D_{n+m} (z_B - z_A)
+        size_t B = M2L_list[i].first;
+        size_t A = M2L_list[i].second;
 
-      // So here, we've reversed the order:
-      // F_n(z_A) = M_m(z_B) * D_{n+m} (z_A - z_B)
-    	double dx = cells[A].x - cells[B].x;
-    	double dy = cells[A].y - cells[B].y;
-    	double dz = cells[A].z - cells[B].z;
-    	M2L(dx, dy, dz, cells[B].M, cells[A].L, order);
+        // Compute M2L - operators are non-atomic, so this is fast
+        double dx = cells[A].x - cells[B].x;
+        double dy = cells[A].y - cells[B].y;
+        double dz = cells[A].z - cells[B].z;
+
+        // Allocate temporary array for this iteration
+        size_t lsize = Lsize(order, FMMGEN_SOURCEORDER);
+        double *L_temp = new double[lsize]();
+
+        // Compute M2L contribution into temporary (non-atomic, fast)
+        M2L(dx, dy, dz, cells[B].M, L_temp, order);
+
+        // Atomically add to target cell (only this part needs sync)
+        for(size_t j = 0; j < lsize; j++) {
+            #pragma omp atomic
+            cells[A].L[j] += L_temp[j];
+        }
+
+        delete[] L_temp;
     }
 }
 
@@ -216,18 +248,28 @@ void evaluate_P2P_lazy(std::vector<Cell> &cells, std::vector<Particle> &particle
 }
 
 
-void evaluate_L2L(std::vector<Cell> &cells, size_t exporder) {
-  // Can't currently go down the tree in parallel!
-  // needs to be recursive or summing not correct.
-  for (size_t p = 0; p < cells.size(); p++) {
-    for (int octant = 0; octant < 8; octant++) {
-      if (cells[p].nchild & (1 << octant)) {
-        // for child c in cell p
-        size_t c = cells[p].child[octant];
-        double dx = cells[c].x - cells[p].x;
-        double dy = cells[c].y - cells[p].y;
-        double dz = cells[c].z - cells[p].z;
-        L2L(dx, dy, dz, cells[p].L, cells[c].L, exporder);
+void evaluate_L2L(std::vector<Cell> &cells, const std::vector<std::vector<size_t>> &levels,
+                  size_t exporder) {
+  /*
+  evaluate_L2L with level-synchronous parallel traversal.
+
+  Process tree top-down, parallelizing within each level.
+  Cells at the same level can be processed in parallel.
+  */
+  // Top-down: start from root level and work down
+  for (size_t l = 0; l < levels.size() - 1; l++) {
+    #pragma omp for schedule(static)
+    for (size_t i = 0; i < levels[l].size(); i++) {
+      size_t p = levels[l][i];
+      for (int octant = 0; octant < 8; octant++) {
+        if (cells[p].nchild & (1 << octant)) {
+          size_t c = cells[p].child[octant];
+          double dx = cells[c].x - cells[p].x;
+          double dy = cells[c].y - cells[p].y;
+          double dz = cells[c].z - cells[p].z;
+          // Each thread processes different parent cells, so no race condition
+          L2L(dx, dy, dz, cells[p].L, cells[c].L, exporder);
+        }
       }
     }
   }

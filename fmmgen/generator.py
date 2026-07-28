@@ -191,7 +191,10 @@ def generate_M2P_operators(
 
     terms = []
 
-    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, eval_derivs=True).subs("R", R)
+    # Phi_derivatives returns expressions in the atomic symbol Rinv, so the radial
+    # dependence must be restored in terms of x, y, z before differentiating -
+    # otherwise sp.diff treats Rinv as a constant and the field is wrong.
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order, eval_derivs=True).subs(sp.Symbol("Rinv"), 1 / R)
     if potential:
         terms.append(V.subs(1 / R, "Rinv"))
 
@@ -271,7 +274,9 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
     for key in S_map.keys():
         subsdict[M[M_dict[key]]] = S[M_dict[key]]
 
-    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order).subs("R", R).subs(subsdict)
+    # As in generate_M2P_operators: restore the radial dependence in terms of
+    # x, y, z before differentiating, since Phi_derivatives emits atomic Rinv.
+    V = L((0, 0, 0), order, symbols, M_dict, source_order=source_order).subs(sp.Symbol("Rinv"), 1 / R).subs(subsdict)
 
     terms = []
     # Note: R must be substituted late for correct derivatives!

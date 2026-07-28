@@ -86,6 +86,7 @@ public:
   std::vector<double> L;
   std::vector<std::pair<size_t, size_t>> M2L_list;
   std::vector<std::pair<size_t, size_t>> P2P_list;
+  std::vector<std::vector<size_t>> levels;  // Cells grouped by tree level for parallel traversal
   void compute_field_fmm(double *F);
   void compute_field_bh(double *F);
   void compute_field_exact(double *F);
