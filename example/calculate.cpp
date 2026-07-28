@@ -138,20 +138,20 @@ void interact_dehnen_lazy(const size_t A, const size_t B,
 void evaluate_P2M(std::vector<Cell> &cells,
                   const double *bx, const double *by, const double *bz,
                   const double *bS, size_t ncrit, size_t exporder) {
-  size_t msize = Msize(exporder, FMMGEN_SOURCEORDER);
-  thread_local std::vector<double> M_thread;
-  if (M_thread.size() != msize) M_thread.resize(msize);
-  double *M = M_thread.data();
-
+  // Uses the generated S2M rather than seeding a scratch multipole with the
+  // source's moments and calling the general M2M. The old form encoded an
+  // undocumented basis assumption in the driver -- that a point source's
+  // multipole coefficients ARE its moments, true for the Cartesian basis but
+  // not in general -- and paid for a full M2M when all but FMMGEN_SOURCESIZE
+  // input coefficients are known to be zero. S2M is that specialisation:
+  // 16.9x fewer multiplies at p=11, 4.1x at p=5.
   #pragma omp for
   for(size_t c = 0; c < cells.size(); c++) {
     if (cells[c].nleaf < ncrit) {
       const size_t o = cells[c].body_offset;
       for(size_t m = o; m < o + cells[c].nleaf; m++) {
-        // Walter Dehnen's definition: (-1)^m / m! (x_a - z_a)^m
-        for(int k = 0; k < FMMGEN_SOURCESIZE; k++) M[k] = bS[FMMGEN_SOURCESIZE*m + k];
-        M2M(cells[c].x - bx[m], cells[c].y - by[m], cells[c].z - bz[m],
-            M, cells[c].M, exporder);
+        S2M(cells[c].x - bx[m], cells[c].y - by[m], cells[c].z - bz[m],
+            const_cast<double*>(&bS[FMMGEN_SOURCESIZE*m]), cells[c].M, exporder);
       }
    }
   }

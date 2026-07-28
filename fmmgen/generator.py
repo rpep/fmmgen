@@ -43,6 +43,40 @@ def generate_M_operators(order, symbols, M_dict):
     return M_operators
 
 
+def generate_S2M_operators(order, symbols, M_dict, source_order=0):
+    """Source-to-multipole: the multipole of one point source about a centre.
+
+    Replaces the previous arrangement, in which the driver seeded a scratch
+    multipole array with the source's raw moments and then called the general
+    M2M to shift it to the cell centre. That worked only because a point
+    source's multipole coefficients ARE its moments in this basis -- an
+    undocumented basis assumption living in the driver rather than the
+    operators -- and it paid for a full M2M when almost every input coefficient
+    is known to be zero.
+
+    A source of order s has a multipole supported only on the |n| = s shell, so
+    this specialises M_shift to that sparse input:
+
+        S2M_n = sum_{k : |n-k| = s} S[n-k] (x, y, z)^k / k!
+
+    Sign convention follows M2M, i.e. (x, y, z) = centre - source, which is what
+    the driver already passes. Note the old P2M used the opposite convention.
+    """
+    shell = [n for n in M_dict if sum(n) == source_order]
+    source_size = len(shell)
+    M = sp.MatrixSymbol("M", Nterms(order), 1)
+    S = sp.MatrixSymbol("S", source_size, 1)
+
+    subs = {M[M_dict[n]]: 0 for n in M_dict}
+    for n in shell:
+        # the |n| = s shell occupies the first source_size slots of M_dict, so
+        # its index doubles as the index into the caller's S array
+        subs[M[M_dict[n]]] = S[M_dict[n]]
+
+    return [M_shift(n, order, symbols, M_dict, source_order=source_order).subs(subs)
+            for n in M_dict]
+
+
 def generate_M_shift_operators(order, symbols, M_dict, source_order=0):
     """
     generate_M_shift_operators(order, symbols, index_dict):

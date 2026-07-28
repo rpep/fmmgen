@@ -11,7 +11,7 @@ from fmmgen.utils import Nterms
 import textwrap
 from fmmgen.generator import (
     generate_mappings,
-    generate_M_operators,
+    generate_S2M_operators,
     generate_M_shift_operators,
     generate_L_operators,
     generate_L_shift_operators,
@@ -144,12 +144,20 @@ def generate_code(
         M_dict, _ = generate_mappings(i, symbols, "grevlex", source_order=source_order)
         L_dict, _ = generate_mappings(i - source_order, symbols, "grevlex", source_order=0)
 
-        M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
+        source_size = Nterms(source_order) - Nterms(source_order - 1)
+        S2M = sp.Matrix(generate_S2M_operators(i, symbols, M_dict, source_order=source_order))
 
-        head, code, P2M_opscount = p.generate(f"P2M_{i}", "M", M, coords + [q], operator="+=")
-        print(f"P2M_{i} opscount = {P2M_opscount}")
+        head, code, S2M_opscount = p.generate(
+            f"S2M_{i}",
+            "M",
+            S2M,
+            list(symbols) + [sp.MatrixSymbol("S", source_size, 1)],
+            operator="+=",
+            atomic=atomic,
+        )
+        print(f"S2M_{i} opscount = {S2M_opscount}")
         header += head
-        body += code
+        body += code + "\n"
         Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
 
         head, code, M2M_opscount = p.generate(
@@ -271,7 +279,7 @@ def generate_code(
         if save_opscounts:
             if i == start:
                 f.write(f"P2P,{P2P_opscount}\n")
-            f.write(f"P2M_{i},{P2M_opscount}\n")
+            f.write(f"S2M_{i},{S2M_opscount}\n")
             f.write(f"M2M_{i},{M2M_opscount}\n")
             f.write(f"M2L_{i},{M2L_opscount}\n")
             f.write(f"L2P_{i},{L2P_opscount}\n")
