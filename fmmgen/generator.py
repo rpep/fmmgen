@@ -1,5 +1,12 @@
 import sympy as sp
 from .expansions import M, M_shift, L, L_shift, phi_deriv, Phi_derivatives
+from .harmonic import (
+    expand_local_subs,
+    lift_multipole_subs,
+    pivot_step,
+    project_multipole,
+    restrict_local,
+)
 from .utils import generate_mappings, Nterms
 import logging
 
@@ -117,10 +124,9 @@ def generate_derivs(order, symbols, M_dict, source_order=0, harmonic_derivs=Fals
     D = sp.MatrixSymbol("D", Nterms(order), 1)
     derivs = []
     for n in M_dict.keys():
-        if n[2] > 1 and harmonic_derivs:
-            k = (n[0], n[1], n[2] - 2)
-            k1 = (k[0] + 2, k[1], k[2])
-            k2 = (k[0], k[1] + 2, k[2])
+        step = pivot_step(n) if harmonic_derivs else None
+        if step is not None:
+            k1, k2 = step
             derivs.append(-D[M_dict[k1]] - D[M_dict[k2]])
         else:
             derivs.append(Phi_derivatives(n, symbols))
@@ -325,3 +331,124 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
         terms.append(Fy)
         terms.append(Fz)
     return terms
+
+
+# --------------------------------------------------------------------------
+# Compressed (harmonic / trace-free) operator variants
+#
+# Each is the uncompressed operator with the transformations of
+# fmmgen.harmonic applied to its input and output arrays. Nothing is
+# rederived; the operators are linear in their expansion arrays, so
+# substitution and projection suffice, and correctness follows from the
+# identity H = Dec H[keep,keep] Dec^T verified in tests/test_harmonic.py.
+#
+# source_order > 0 is not supported: M_dict and L_dict are then built at
+# different orders and the retained index set no longer lines up with both.
+# The uncompressed path is unaffected.
+# --------------------------------------------------------------------------
+
+def _reject_source_order(source_order):
+    if source_order:
+        raise NotImplementedError(
+            "compressed operators are implemented for source_order = 0 only; "
+            f"got {source_order}. Use compress=False for higher source orders."
+        )
+
+
+def generate_S2M_operators_compressed(order, symbols, M_dict, keep_dict, source_order=0):
+    _reject_source_order(source_order)
+    ops = generate_S2M_operators(order, symbols, M_dict, source_order=source_order)
+    return project_multipole(ops, order, symbols, M_dict, keep_dict)
+
+
+def generate_M_shift_operators_compressed(order, symbols, M_dict, keep_dict, source_order=0):
+    _reject_source_order(source_order)
+    ops = generate_M_shift_operators(order, symbols, M_dict, source_order=source_order)
+    subs = lift_multipole_subs("M", order, M_dict, keep_dict)
+    ops = [expr.subs(subs) for expr in ops]
+    return project_multipole(ops, order, symbols, M_dict, keep_dict)
+
+
+def generate_L_operators_compressed(order, symbols, M_dict, L_dict, keep_dict, source_order=0):
+    _reject_source_order(source_order)
+    ops = generate_L_operators(order, symbols, M_dict, L_dict, source_order=source_order)
+    subs = lift_multipole_subs("M", order, M_dict, keep_dict)
+    ops = [expr.subs(subs) for expr in ops]
+    return restrict_local(ops, L_dict, keep_dict)
+
+
+def generate_L_shift_operators_compressed(order, symbols, L_dict, keep_dict, source_order=0):
+    _reject_source_order(source_order)
+    ops = generate_L_shift_operators(order, symbols, L_dict, source_order=source_order)
+    subs = expand_local_subs("L", order, symbols, L_dict, keep_dict)
+    ops = [expr.subs(subs) for expr in ops]
+    return restrict_local(ops, L_dict, keep_dict)
+
+
+def generate_L2P_operators_compressed(order, symbols, L_dict, keep_dict, potential=True, field=True):
+    ops = generate_L2P_operators(order, symbols, L_dict, potential=potential, field=field)
+    subs = expand_local_subs("L", order, symbols, L_dict, keep_dict)
+    return [expr.subs(subs) for expr in ops]
+
+
+def generate_M2P_operators_compressed(
+    order, symbols, M_dict, keep_dict, potential=True, field=True,
+    source_order=0, harmonic_derivs=False,
+):
+    _reject_source_order(source_order)
+    ops = generate_M2P_operators(
+        order, symbols, M_dict, potential=potential, field=field,
+        source_order=source_order, harmonic_derivs=harmonic_derivs,
+    )
+    subs = lift_multipole_subs("M", order, M_dict, keep_dict)
+    return [expr.subs(subs) for expr in ops]
+
+
+def generate_M2L_compressed(order, symbols, M_dict, L_dict, keep_dict,
+                            source_order=0, harmonic_derivs=False):
+    """
+    Compressed M2L, returning (derivs, L_operators) with a compact D array.
+
+    The compressed contraction only ever references derivatives D_{i+j} with
+    i, j retained, hence with third index <= 2, which is O(p^2) of the
+    O(p^3) entries the uncompressed operator needs. Emitting the full
+    derivative array would hand back a good part of the saving, so the used
+    entries are collected and reindexed into a dense array.
+
+    Ordering is inherited from the uncompressed index map, which is what makes
+    harmonic_derivs still valid here: pivot_step targets have the same total
+    degree and a lower z index, so under grevlex on [z, y, x] they keep an
+    earlier slot than the entry that depends on them. Where a target falls
+    outside the used set the derivative is computed directly instead.
+    """
+    _reject_source_order(source_order)
+
+    L_ops = generate_L_operators_compressed(
+        order, symbols, M_dict, L_dict, keep_dict, source_order=source_order
+    )
+
+    D_full = sp.MatrixSymbol("D", Nterms(order), 1)
+    used = sorted(
+        {
+            a.i
+            for expr in L_ops
+            for a in expr.atoms(sp.matrices.expressions.matexpr.MatrixElement)
+            if a.parent.name == "D"
+        }
+    )
+    remap = {old: new for new, old in enumerate(used)}
+    D = sp.MatrixSymbol("D", len(used), 1)
+    L_ops = [expr.subs({D_full[o]: D[n] for o, n in remap.items()}) for expr in L_ops]
+
+    rmap = {idx: n for n, idx in M_dict.items()}
+    derivs = []
+    for old in used:
+        n = rmap[old]
+        step = pivot_step(n) if harmonic_derivs else None
+        if step is not None and all(M_dict[k] in remap for k in step):
+            k1, k2 = step
+            derivs.append(-D[remap[M_dict[k1]]] - D[remap[M_dict[k2]]])
+        else:
+            derivs.append(Phi_derivatives(n, symbols))
+
+    return derivs, L_ops

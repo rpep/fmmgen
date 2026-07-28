@@ -1,6 +1,7 @@
 import sympy as sp
 from sympy import factorial
 from sympy import binomial
+from .harmonic import pivot_step
 from .utils import q, Nterms, generate_mappings
 import functools
 import logging
@@ -145,9 +146,7 @@ def Phi_derivatives(n, symbols, harmonic=False):
         deriv = deriv.subs(1 / R, "Rinv")
         return deriv
     else:
-        k = (n[0], n[1], n[2] - 2)
-        k1 = (k[0] + 2, k[1], k[2])
-        k2 = (k[0], k[1] + 2, k[2])
+        k1, k2 = pivot_step(n)
         return -(Phi_derivatives(k1, symbols, harmonic=harmonic)) - (Phi_derivatives(k2, symbols, harmonic=harmonic))
 
 
