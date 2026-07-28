@@ -10,9 +10,104 @@
 #include <iostream>
 #include <random>
 #include <string>
+#include <vector>
 #include "args.hxx"
 
+#ifdef __linux__
+#include <sched.h>
+#include <sstream>
+#endif
+
+/*! \brief Pin one thread per physical core.
+
+    Worth up to 2.3x. Left to the operating system, threads are placed two to a
+    core on the SMT siblings while physical cores sit idle, and the consequence
+    is that more threads can be SLOWER: measured on a 2x48-core Sapphire Rapids
+    node, 192 unbound threads took 36.3 ms against 26.1 ms for 48, and the first
+    parallel region of the solve inflated from 0.18 ms to 7.8 ms.
+
+    This cannot be done through omp.h. OMP_PLACES and OMP_PROC_BIND are
+    read-only ICVs fixed before the program starts -- libgomp parses them in a
+    constructor that runs before main, so calling setenv here is too late
+    (verified: omp_get_proc_bind still reports false afterwards) -- and there is
+    deliberately no omp_set_proc_bind in the API. The proc_bind(spread) clause
+    exists but is ignored when binding is disabled, which is the default. So the
+    placement is done here explicitly.
+
+    Setting OMP_PROC_BIND or OMP_PLACES in the environment disables this and
+    hands the decision back to the OpenMP runtime -- including OMP_PROC_BIND=false,
+    which is an explicit request for no binding at all.
+*/
+static void bind_threads_to_cores() {
+#ifdef __linux__
+  // Any explicit setting wins, whatever it says. Testing omp_get_proc_bind()
+  // alone would not honour OMP_PROC_BIND=false, since that reads back the same
+  // as "unset".
+  if (std::getenv("OMP_PROC_BIND") || std::getenv("OMP_PLACES")) {
+    return;
+  }
+  if (omp_get_proc_bind() != omp_proc_bind_false) {
+    return;   // the runtime is already binding; do not fight it
+  }
+
+  cpu_set_t allowed;
+  CPU_ZERO(&allowed);
+  if (sched_getaffinity(0, sizeof allowed, &allowed) != 0) {
+    return;
+  }
+
+  // One representative CPU per physical core, then the remaining SMT siblings.
+  // The representative is the lowest-numbered sibling, read from sysfs rather
+  // than assumed: this node enumerates all 96 physical cores before any sibling,
+  // but round-robin enumeration is common elsewhere and assuming either one
+  // silently recreates the problem this function exists to avoid.
+  std::vector<int> cores, siblings;
+  for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+    if (!CPU_ISSET(cpu, &allowed)) continue;
+
+    std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(cpu) + "/topology/thread_siblings_list");
+    int first = cpu;
+    if (f) {
+      std::string list;
+      std::getline(f, list);
+      std::istringstream ss(list);
+      int v;
+      if (ss >> v) first = v;   // lists are ascending, so the first entry is the core
+    }
+    (first == cpu ? cores : siblings).push_back(cpu);
+  }
+
+  if (cores.empty()) return;
+
+  // Unless the user asked for a specific count, use one thread per physical
+  // core: SMT measured worthless here (P2P does not improve at all past the
+  // physical core count) and it costs a factor of two when it displaces a core.
+  if (!std::getenv("OMP_NUM_THREADS")) {
+    omp_set_num_threads((int)cores.size());
+  }
+
+  std::vector<int> order = cores;
+  order.insert(order.end(), siblings.begin(), siblings.end());
+
+  #pragma omp parallel
+  {
+    const int t = omp_get_thread_num();
+    cpu_set_t one;
+    CPU_ZERO(&one);
+    CPU_SET(order[t % order.size()], &one);
+    // Threads are drawn from libgomp's persistent pool, so the affinity set
+    // here survives into every later parallel region at the same team size.
+    sched_setaffinity(0, sizeof one, &one);
+  }
+
+  std::cout << "Bound " << omp_get_max_threads() << " threads across "
+            << cores.size() << " physical cores." << std::endl;
+#endif
+}
+
 int main(int argc, const char **argv) {
+  bind_threads_to_cores();
+
   // Set initial parameters by user input from
   // the command line:
   args::ArgumentParser parser("Fmmgen Example Code.", "This shows how the program scales and prints field,\n"
