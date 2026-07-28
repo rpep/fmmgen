@@ -3,12 +3,9 @@ from sympy.printing.cxx import CXX11CodePrinter as CXX11Base
 import logging
 import re
 import sympy as sp
-from sympy import Mul, S, Pow
-from fmmgen.cse import cse
+from sympy import cse
 from fmmgen.opts import basic as opts
 from sympy import count_ops
-from sympy.printing.precedence import precedence
-from sympy.core.mul import _keep_coeff
 
 
 logger = logging.getLogger(name="fmmgen")
@@ -55,70 +52,6 @@ class CCodePrinter(C99Base):
         else:
             return super()._print_Pow(expr)
 
-    def _print_Mul(self, expr):
-        prec = precedence(expr)
-        c, e = expr.as_coeff_Mul()
-
-        if c == 1.0:
-            expr = e
-            sign = ""
-        elif e == 1.0:
-            expr = c
-            sign = ""
-
-        elif c < 0:
-            if c == -1.0:
-                expr = e
-                sign = "-"
-            elif e == -1.0:
-                expr = c
-                sign = "-"
-            else:
-                expr = _keep_coeff(-c, e)
-                sign = "-"
-        else:
-            sign = ""
-
-        a = []  # items in the numerator
-        b = []  # items that are in the denominator (if any)
-
-        pow_paren = []  # Will collect all pow with more than one base element and exp = -1
-
-        if self.order not in ("old", "none"):
-            args = expr.as_ordered_factors()
-        else:
-            # use make_args in case expr was something like -x -> x
-            args = Mul.make_args(expr)
-
-        # Gather args for numerator/denominator
-        for item in args:
-            if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
-                if item.exp != -1:
-                    b.append(Pow(item.base, -item.exp, evaluate=False))
-                else:
-                    if len(item.args[0].args) != 1 and isinstance(item.base, Mul):  # To avoid situations like #14160
-                        pow_paren.append(item)
-                    b.append(Pow(item.base, -item.exp))
-            else:
-                a.append(item)
-
-        a = a or [S.One]
-
-        a_str = [self.parenthesize(x, prec) for x in a]
-        b_str = [self.parenthesize(x, prec) for x in b]
-
-        # To parenthesize Pow with exp = -1 and having more than one Symbol
-        for item in pow_paren:
-            if item.base in b:
-                b_str[b.index(item.base)] = "(%s)" % b_str[b.index(item.base)]
-
-        if not b:
-            return sign + "*".join(a_str)
-        elif len(b) == 1:
-            return sign + "*".join(a_str) + "/" + b_str[0]
-        else:
-            return sign + "*".join(a_str) + "/(%s)" % "*".join(b_str)
-
 
 class CXXCodePrinter(CXX11Base):
     def __init__(self, settings={}, minpow=False):
@@ -139,61 +72,6 @@ class CXXCodePrinter(CXX11Base):
                 return super()._print_Pow(expr)
         else:
             return super()._print_Pow(expr)
-
-    def _print_Mul(self, expr):
-        prec = precedence(expr)
-        c, e = expr.as_coeff_Mul()
-
-        if c == 1.0:
-            return str(e)
-        elif e == 1.0:
-            return str(c)
-
-        if c < 0:
-            expr = _keep_coeff(-c, e)
-            sign = "-"
-        else:
-            sign = ""
-
-        a = []  # items in the numerator
-        b = []  # items that are in the denominator (if any)
-
-        pow_paren = []  # Will collect all pow with more than one base element and exp = -1
-
-        if self.order not in ("old", "none"):
-            args = expr.as_ordered_factors()
-        else:
-            # use make_args in case expr was something like -x -> x
-            args = Mul.make_args(expr)
-
-        # Gather args for numerator/denominator
-        for item in args:
-            if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
-                if item.exp != -1:
-                    b.append(Pow(item.base, -item.exp, evaluate=False))
-                else:
-                    if len(item.args[0].args) != 1 and isinstance(item.base, Mul):  # To avoid situations like #14160
-                        pow_paren.append(item)
-                    b.append(Pow(item.base, -item.exp))
-            else:
-                a.append(item)
-
-        a = a or [S.One]
-
-        a_str = [self.parenthesize(x, prec) for x in a]
-        b_str = [self.parenthesize(x, prec) for x in b]
-
-        # To parenthesize Pow with exp = -1 and having more than one Symbol
-        for item in pow_paren:
-            if item.base in b:
-                b_str[b.index(item.base)] = "(%s)" % b_str[b.index(item.base)]
-
-        if not b:
-            return sign + "*".join(a_str)
-        elif len(b) == 1:
-            return sign + "*".join(a_str) + "/" + b_str[0]
-        else:
-            return sign + "*".join(a_str) + "/(%s)" % "*".join(b_str)
 
 
 language_mapping = {
@@ -271,13 +149,10 @@ class FunctionPrinter:
         #
         # R is left as sqrt() in case it gets used in expansions in future.
 
-        light_ignore = []
         if sp.symbols("R") in matrix.free_symbols:
             code += f"{self.precision} R = sqrt(x*x + y*y + z*z);\n"
-            light_ignore.append("R")
         if sp.symbols("Rinv") in matrix.free_symbols:
             code += f"{self.precision} Rinv = 1.0 / sqrt(x*x + y*y + z*z);\n"
-            light_ignore.append("Rinv")
 
         if allocate:
             code += f"{self.precision} {name}[{len(matrix)}];\n"
@@ -286,12 +161,25 @@ class FunctionPrinter:
             # print('Printing with CSE')
             iterator = SymbolIterator(name)
             # print(f'ignoring {name} in cse')
+            # Stock sympy.cse. fmmgen previously vendored a patched copy of
+            # sympy's tree_cse/cse (fmmgen/cse.py) to add `ignore` and
+            # `light_ignore` filtering, but neither was doing anything:
+            #
+            #  - inserting the light_ignore loop between the `ignore` loop and
+            #    its `for...else` detached them, so breaking out of the
+            #    `ignore` loop no longer skipped elimination;
+            #  - `light_ignore` compared against whole expressions, but bare
+            #    Symbols return early as atoms, so it never matched. Its only
+            #    effect was a debug print on every subexpression.
+            #
+            # Verified byte-identical generated output across p = 1..11 with
+            # stock cse and no ignore arguments, so the vendored copy and both
+            # parameters were removed. This also drops a dependency on sympy
+            # internals (opt_cse, preprocess_for_cse, Unevaluated, ...).
             sub_expressions, rmatrix = cse(
                 matrix,
                 optimizations=opts,
                 symbols=iterator,
-                ignore=(ignore_symbols),
-                light_ignore=light_ignore,
             )
 
             rmatrix = sp.Matrix(rmatrix)

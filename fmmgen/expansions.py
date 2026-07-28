@@ -129,7 +129,17 @@ def Phi_derivatives(n, symbols, harmonic=False):
     """
     if not harmonic or n[2] < 2:
         dx, dy, dz = symbols
-        R = (dx**2 + dy**2 + dz**2) ** (0.5)
+        # Exact sqrt, NOT (...)**(0.5).
+        #
+        # A Python float exponent makes every coefficient and exponent in the
+        # derived expressions a sympy Float, which caused two separate problems:
+        # printers.py gated its pow->multiplication replacement on
+        # `exp.is_integer` (False for Float(3.0), so `minpow` silently never
+        # fired), and Float(1.0) coefficients survive simplification, which is
+        # why the printer carried a patched `_print_Mul` to strip them.
+        # Exact arithmetic removes the cause of both, and sympy factors the
+        # derivatives better besides.
+        R = sp.sqrt(dx**2 + dy**2 + dz**2)
         phi = 1 / R
         deriv = sp.diff(phi, dx, n[0], dy, n[1], dz, n[2])
         deriv = deriv.subs(1 / R, "Rinv")

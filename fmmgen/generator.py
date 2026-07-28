@@ -187,7 +187,7 @@ def generate_M2P_operators(
     Barnes-Hut method up to order.
     """
     x, y, z = symbols
-    R = (x**2 + y**2 + z**2) ** 0.5
+    R = sp.sqrt(x**2 + y**2 + z**2)
 
     terms = []
 
@@ -261,7 +261,7 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
     order = source_order
     M_dict, _ = generate_mappings(source_order, symbols, "grevlex", source_order=source_order)
     x, y, z = sp.symbols("x y z")
-    R = (x**2 + y**2 + z**2) ** 0.5
+    R = sp.sqrt(x**2 + y**2 + z**2)
 
     S_map, _ = generate_mappings(source_order, [x, y, z], key="grevlex", source_order=source_order)
     # print('S_map = {}'.format(S_map))
