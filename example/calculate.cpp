@@ -1,4 +1,5 @@
 #include "calculate.hpp"
+#include "variant.hpp"
 #include "operators.h"
 #include "tree.hpp"
 #include "utils.hpp"
@@ -150,7 +151,7 @@ void evaluate_P2M(std::vector<Cell> &cells,
     if (cells[c].nleaf < ncrit) {
       const size_t o = cells[c].body_offset;
       for(size_t m = o; m < o + cells[c].nleaf; m++) {
-        S2M(cells[c].x - bx[m], cells[c].y - by[m], cells[c].z - bz[m],
+        fmm->s2m(cells[c].x - bx[m], cells[c].y - by[m], cells[c].z - bz[m],
             const_cast<double*>(&bS[FMMGEN_SOURCESIZE*m]), cells[c].M, exporder);
       }
    }
@@ -183,7 +184,7 @@ void evaluate_M2M(std::vector<Cell> &cells,
           double dx = (cells[p].x - cells[c].x);
           double dy = (cells[p].y - cells[c].y);
           double dz = (cells[p].z - cells[c].z);
-          M2M(dx, dy, dz, cells[c].M, cells[p].M, exporder);
+          fmm->m2m(dx, dy, dz, cells[c].M, cells[p].M, exporder);
         }
       }
     }
@@ -213,7 +214,7 @@ void evaluate_M2L_lazy(std::vector<Cell> &cells,
         const double ax = cells[A].x, ay = cells[A].y, az = cells[A].z;
         for (size_t i = begin; i < end; i++) {
             const size_t B = M2L_list[i].source;
-            M2L(ax - cells[B].x, ay - cells[B].y, az - cells[B].z,
+            fmm->m2l(ax - cells[B].x, ay - cells[B].y, az - cells[B].z,
                 cells[B].M, L, order);
         }
     }
@@ -285,7 +286,7 @@ void evaluate_L2L(std::vector<Cell> &cells, const std::vector<std::vector<size_t
           double dy = cells[c].y - cells[p].y;
           double dz = cells[c].z - cells[p].z;
           // Each thread processes different parent cells, so no race condition
-          L2L(dx, dy, dz, cells[p].L, cells[c].L, exporder);
+          fmm->l2l(dx, dy, dz, cells[p].L, cells[c].L, exporder);
         }
       }
     }
@@ -300,7 +301,7 @@ void evaluate_L2P(std::vector<Cell> &cells,
     if (cells[i].nleaf < ncrit) {
       const size_t o = cells[i].body_offset;
       for (size_t m = o; m < o + cells[i].nleaf; m++) {
-        L2P(bx[m] - cells[i].x, by[m] - cells[i].y, bz[m] - cells[i].z,
+        fmm->l2p(bx[m] - cells[i].x, by[m] - cells[i].y, bz[m] - cells[i].z,
             cells[i].L, &F[FMMGEN_OUTPUTSIZE*m], exporder);
       }
     }
@@ -337,7 +338,7 @@ void evaluate_M2P_and_P2P(const double *bx, const double *by, const double *bz,
             evaluate_M2P_and_P2P(bx, by, bz, bS, c, m, cells, F, n_crit, theta, exporder);
         }
         else {
-            M2P(dx, dy, dz, cells[c].M, &F[FMMGEN_OUTPUTSIZE*m], exporder);
+            fmm->m2p(dx, dy, dz, cells[c].M, &F[FMMGEN_OUTPUTSIZE*m], exporder);
         }
       }
     }

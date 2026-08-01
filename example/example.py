@@ -15,4 +15,5 @@ fmmgen.generate_code(order, "operators",
                      source_order=source_order,
                      atomic=atomic, minpow=11,
                      harmonic_derivs=True,
+                     compress=True,
                      language='c++')

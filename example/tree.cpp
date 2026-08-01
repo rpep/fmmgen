@@ -1,4 +1,5 @@
 #include "tree.hpp"
+#include "variant.hpp"
 #include <stdexcept>
 #include <string>
 #include<cmath>
@@ -305,11 +306,15 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
 
 
   // Create memory into which each cell can point for the multipole arrays.
-  tree.M.resize(tree.cells.size() * Msize(order, FMMGEN_SOURCEORDER), 0.0);
-  tree.L.resize(tree.cells.size() * Lsize(order, FMMGEN_SOURCEORDER), 0.0);
+  // Strides come from the selected variant: the compressed operators use
+  // (order+1)^2 coefficients, not Nterms(order). Baked into the cell pointers
+  // here, so nothing downstream needs to know which variant is running.
+  const size_t ms = fmm->msize(order), ls = fmm->lsize(order);
+  tree.M.resize(tree.cells.size() * ms, 0.0);
+  tree.L.resize(tree.cells.size() * ls, 0.0);
   for(size_t i = 0; i < tree.cells.size(); i++) {
-    tree.cells[i].M = &tree.M[i*Msize(order, FMMGEN_SOURCEORDER)];
-    tree.cells[i].L = &tree.L[i*Lsize(order, FMMGEN_SOURCEORDER)];
+    tree.cells[i].M = &tree.M[i*ms];
+    tree.cells[i].L = &tree.L[i*ls];
   }
 
   // Precompute tree levels for efficient parallel M2M and L2L

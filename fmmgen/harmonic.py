@@ -54,16 +54,21 @@ import sympy as sp
 from .utils import Nterms, generate_mappings
 
 
-def Nkeep(p):
+def Nkeep(p, source_order=0):
     """
-    Number of retained coefficients in a harmonic expansion of order p.
+    Number of retained coefficients for degrees source_order <= |n| <= p.
+
+    Each degree shell k keeps 2k+1 of its (k+1)(k+2)/2 monomials, so this is
+    sum_{k=s}^{p} (2k+1) = (p+1)^2 - s^2.
 
     >>> [Nkeep(p) for p in range(5)]
     [1, 4, 9, 16, 25]
+    >>> [Nkeep(p, 1) for p in range(1, 5)]
+    [3, 8, 15, 24]
     """
-    if p < 0:
+    if p < source_order:
         return 0
-    return (p + 1) ** 2
+    return (p + 1) ** 2 - source_order**2
 
 
 def keep_mappings(order, symbols, key="grevlex", source_order=0):
@@ -204,41 +209,57 @@ def decompress(order, symbols, key="grevlex", source_order=0):
 # loses nothing.
 # --------------------------------------------------------------------------
 
-def lift_multipole_subs(name, order, full_dict, keep_dict):
+def decompress_for(index_dict):
+    """
+    The decompression map restricted to a given index set.
+
+    Sizes and ranges differ between the multipole and local arrays as soon as
+    source_order > 0 -- M covers s <= |n| <= p while L covers |m| <= p - s --
+    so the maps are built from the index dicts in play rather than from a
+    single order. Safe for either, because expand_index preserves total degree
+    and so never leaves the shell it started in.
+    """
+    return {n: expand_index(n) for n in index_dict}
+
+
+def lift_multipole_subs(name, full_size, comp_size, full_dict, keep_dict):
     """
     Substitution sending a full-indexed multipole array onto the compressed
     one: retained entries to their compressed slot, eliminated entries to zero.
     """
-    full = sp.MatrixSymbol(name, Nterms(order), 1)
-    comp = sp.MatrixSymbol(name, Nkeep(order), 1)
+    full = sp.MatrixSymbol(name, full_size, 1)
+    comp = sp.MatrixSymbol(name, comp_size, 1)
     return {
         full[i]: (comp[keep_dict[n]] if n in keep_dict else sp.Integer(0))
         for n, i in full_dict.items()
     }
 
 
-def expand_local_subs(name, order, symbols, full_dict, keep_dict):
+def expand_local_subs(name, full_size, comp_size, full_dict, keep_dict, dec):
     """
     Substitution sending a full-indexed local array onto the compressed one,
     L_n = sum_i Dec[n, i] Lt_i.
     """
-    full = sp.MatrixSymbol(name, Nterms(order), 1)
-    comp = sp.MatrixSymbol(name, Nkeep(order), 1)
-    dec = decompress(order, symbols)
+    full = sp.MatrixSymbol(name, full_size, 1)
+    comp = sp.MatrixSymbol(name, comp_size, 1)
     return {
         full[i]: sum(c * comp[keep_dict[k]] for k, c in dec[n].items())
         for n, i in full_dict.items()
     }
 
 
-def project_multipole(exprs, order, symbols, full_dict, keep_dict):
-    """Dec^T applied to a full-indexed expression list, giving a keep-indexed one."""
-    dec = decompress(order, symbols)
-    acc = {i: sp.Integer(0) for i in keep_dict}
+def project_multipole(exprs, full_dict, keep_dict, dec):
+    """
+    Dec^T applied to a full-indexed expression list, giving a keep-indexed one.
+
+    Terms are collected and summed once per output rather than accumulated with
+    +=, which would rebuild an ever-larger Add on every step.
+    """
+    acc = {i: [] for i in keep_dict}
     for n, idx in full_dict.items():
         for k, c in dec[n].items():
-            acc[k] += c * exprs[idx]
-    return [acc[i] for i in keep_dict]
+            acc[k].append(c * exprs[idx])
+    return [sp.Add(*acc[i]) if acc[i] else sp.Integer(0) for i in keep_dict]
 
 
 def restrict_local(exprs, full_dict, keep_dict):

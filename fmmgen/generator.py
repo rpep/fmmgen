@@ -1,6 +1,8 @@
 import sympy as sp
 from .expansions import M, M_shift, L, L_shift, phi_deriv, Phi_derivatives
 from .harmonic import (
+    decompress_for,
+    keep_mappings,
     expand_local_subs,
     lift_multipole_subs,
     pivot_step,
@@ -342,70 +344,104 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
 # substitution and projection suffice, and correctness follows from the
 # identity H = Dec H[keep,keep] Dec^T verified in tests/test_harmonic.py.
 #
-# source_order > 0 is not supported: M_dict and L_dict are then built at
-# different orders and the retained index set no longer lines up with both.
-# The uncompressed path is unaffected.
+# The multipole and local arrays need SEPARATE retained sets. They coincide
+# only at source_order = 0; for a source of order s the multipole covers
+# s <= |n| <= p while the local covers |m| <= p - s, so keep_M and keep_L are
+# different index sets of different sizes. Passing one for both was what
+# previously limited this to source_order = 0.
+#
+# source_order >= 2 is still rejected, for a different and real reason: at
+# degree k the retained count is 2k+1 against (k+1)(k+2)/2 monomials, equal
+# only for k <= 1. So a monopole or dipole source shell survives compression
+# untouched (1 = 1, 3 = 3) and generate_S2M_operators' assumption that the
+# shell indexes directly into the caller's S array still holds, whereas a
+# quadrupole's six components compress to five -- physically right, since the
+# trace of a quadrupole moment contributes nothing to a Laplace field, but it
+# makes S2M a genuine projection and changes the caller's ABI.
 # --------------------------------------------------------------------------
 
 def _reject_source_order(source_order):
-    if source_order:
+    if source_order > 1:
         raise NotImplementedError(
-            "compressed operators are implemented for source_order = 0 only; "
-            f"got {source_order}. Use compress=False for higher source orders."
+            "compressed operators support source_order 0 or 1; got "
+            f"{source_order}. At degree >= 2 the source shell itself "
+            "compresses (6 monomials -> 5 retained at s=2), so S2M would have "
+            "to project the caller's moment array. Use compress=False."
         )
 
 
-def generate_S2M_operators_compressed(order, symbols, M_dict, keep_dict, source_order=0):
+def _keep_sets(order, symbols, M_dict, L_dict, source_order):
+    """Retained index sets and decompression maps for the two arrays."""
+    keep_M, _ = keep_mappings(order, symbols, source_order=source_order)
+    keep_L, _ = keep_mappings(order - source_order, symbols, source_order=0)
+    return keep_M, keep_L, decompress_for(M_dict), decompress_for(L_dict)
+
+
+def generate_S2M_operators_compressed(order, symbols, M_dict, keep_M, source_order=0,
+                                      dec_M=None, ops=None):
     _reject_source_order(source_order)
-    ops = generate_S2M_operators(order, symbols, M_dict, source_order=source_order)
-    return project_multipole(ops, order, symbols, M_dict, keep_dict)
+    if ops is None:
+        ops = generate_S2M_operators(order, symbols, M_dict, source_order=source_order)
+    return project_multipole(ops, M_dict, keep_M, dec_M or decompress_for(M_dict))
 
 
-def generate_M_shift_operators_compressed(order, symbols, M_dict, keep_dict, source_order=0):
+def generate_M_shift_operators_compressed(order, symbols, M_dict, keep_M, source_order=0,
+                                          dec_M=None, ops=None):
     _reject_source_order(source_order)
-    ops = generate_M_shift_operators(order, symbols, M_dict, source_order=source_order)
-    subs = lift_multipole_subs("M", order, M_dict, keep_dict)
-    ops = [expr.subs(subs) for expr in ops]
-    return project_multipole(ops, order, symbols, M_dict, keep_dict)
+    dec_M = dec_M or decompress_for(M_dict)
+    if ops is None:
+        ops = generate_M_shift_operators(order, symbols, M_dict, source_order=source_order)
+    subs = lift_multipole_subs("M", Nterms(order), len(keep_M), M_dict, keep_M)
+    ops = [expr.xreplace(subs) for expr in ops]
+    return project_multipole(ops, M_dict, keep_M, dec_M)
 
 
-def generate_L_operators_compressed(order, symbols, M_dict, L_dict, keep_dict, source_order=0):
+def generate_L_operators_compressed(order, symbols, M_dict, L_dict, keep_M, keep_L,
+                                    source_order=0, ops=None):
     _reject_source_order(source_order)
-    ops = generate_L_operators(order, symbols, M_dict, L_dict, source_order=source_order)
-    subs = lift_multipole_subs("M", order, M_dict, keep_dict)
-    ops = [expr.subs(subs) for expr in ops]
-    return restrict_local(ops, L_dict, keep_dict)
+    if ops is None:
+        ops = generate_L_operators(order, symbols, M_dict, L_dict, source_order=source_order)
+    subs = lift_multipole_subs("M", Nterms(order), len(keep_M), M_dict, keep_M)
+    ops = [expr.xreplace(subs) for expr in ops]
+    return restrict_local(ops, L_dict, keep_L)
 
 
-def generate_L_shift_operators_compressed(order, symbols, L_dict, keep_dict, source_order=0):
+def generate_L_shift_operators_compressed(order, symbols, L_dict, keep_L, source_order=0,
+                                          dec_L=None, ops=None):
     _reject_source_order(source_order)
-    ops = generate_L_shift_operators(order, symbols, L_dict, source_order=source_order)
-    subs = expand_local_subs("L", order, symbols, L_dict, keep_dict)
-    ops = [expr.subs(subs) for expr in ops]
-    return restrict_local(ops, L_dict, keep_dict)
+    dec_L = dec_L or decompress_for(L_dict)
+    if ops is None:
+        ops = generate_L_shift_operators(order, symbols, L_dict, source_order=source_order)
+    subs = expand_local_subs("L", Nterms(order), len(keep_L), L_dict, keep_L, dec_L)
+    ops = [expr.xreplace(subs) for expr in ops]
+    return restrict_local(ops, L_dict, keep_L)
 
 
-def generate_L2P_operators_compressed(order, symbols, L_dict, keep_dict, potential=True, field=True):
-    ops = generate_L2P_operators(order, symbols, L_dict, potential=potential, field=field)
-    subs = expand_local_subs("L", order, symbols, L_dict, keep_dict)
-    return [expr.subs(subs) for expr in ops]
+def generate_L2P_operators_compressed(order, symbols, L_dict, keep_L, potential=True,
+                                      field=True, dec_L=None, ops=None):
+    dec_L = dec_L or decompress_for(L_dict)
+    if ops is None:
+        ops = generate_L2P_operators(order, symbols, L_dict, potential=potential, field=field)
+    subs = expand_local_subs("L", Nterms(order), len(keep_L), L_dict, keep_L, dec_L)
+    return [expr.xreplace(subs) for expr in ops]
 
 
 def generate_M2P_operators_compressed(
-    order, symbols, M_dict, keep_dict, potential=True, field=True,
-    source_order=0, harmonic_derivs=False,
+    order, symbols, M_dict, keep_M, potential=True, field=True,
+    source_order=0, harmonic_derivs=False, ops=None,
 ):
     _reject_source_order(source_order)
-    ops = generate_M2P_operators(
-        order, symbols, M_dict, potential=potential, field=field,
-        source_order=source_order, harmonic_derivs=harmonic_derivs,
-    )
-    subs = lift_multipole_subs("M", order, M_dict, keep_dict)
-    return [expr.subs(subs) for expr in ops]
+    if ops is None:
+        ops = generate_M2P_operators(
+            order, symbols, M_dict, potential=potential, field=field,
+            source_order=source_order, harmonic_derivs=harmonic_derivs,
+        )
+    subs = lift_multipole_subs("M", Nterms(order), len(keep_M), M_dict, keep_M)
+    return [expr.xreplace(subs) for expr in ops]
 
 
-def generate_M2L_compressed(order, symbols, M_dict, L_dict, keep_dict,
-                            source_order=0, harmonic_derivs=False):
+def generate_M2L_compressed(order, symbols, M_dict, L_dict, keep_M, keep_L,
+                            source_order=0, harmonic_derivs=False, ops=None):
     """
     Compressed M2L, returning (derivs, L_operators) with a compact D array.
 
@@ -424,7 +460,7 @@ def generate_M2L_compressed(order, symbols, M_dict, L_dict, keep_dict,
     _reject_source_order(source_order)
 
     L_ops = generate_L_operators_compressed(
-        order, symbols, M_dict, L_dict, keep_dict, source_order=source_order
+        order, symbols, M_dict, L_dict, keep_M, keep_L, source_order=source_order, ops=ops
     )
 
     D_full = sp.MatrixSymbol("D", Nterms(order), 1)
@@ -438,14 +474,14 @@ def generate_M2L_compressed(order, symbols, M_dict, L_dict, keep_dict,
     )
     remap = {old: new for new, old in enumerate(used)}
     D = sp.MatrixSymbol("D", len(used), 1)
-    L_ops = [expr.subs({D_full[o]: D[n] for o, n in remap.items()}) for expr in L_ops]
+    L_ops = [expr.xreplace({D_full[o]: D[n] for o, n in remap.items()}) for expr in L_ops]
 
     rmap = {idx: n for n, idx in M_dict.items()}
     derivs = []
     for old in used:
         n = rmap[old]
         step = pivot_step(n) if harmonic_derivs else None
-        if step is not None and all(M_dict[k] in remap for k in step):
+        if step is not None and all(k in M_dict and M_dict[k] in remap for k in step):
             k1, k2 = step
             derivs.append(-D[remap[M_dict[k1]]] - D[remap[M_dict[k2]]])
         else:

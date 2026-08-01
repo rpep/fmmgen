@@ -1,6 +1,7 @@
 #include "calculate.hpp"
 #include "tree.hpp"
 #include "utils.hpp"
+#include "variant.hpp"
 #include "operators.h"
 #include "omp.h"
 #include <chrono>
@@ -121,6 +122,7 @@ int main(int argc, const char **argv) {
   args::ValueFlag<size_t> nc(parser, "ncrit", "The maximum number of particles in a cell", {"n", "ncrit"});
   args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"T", "type"});
   args::ValueFlag<std::string> filelabel(parser, "label", "Label for the output files", {"l", "label"});
+  args::ValueFlag<int> compressed(parser, "compress", "Use harmonic-compressed operators (0/1)", {"c", "compress"});
 
   try
   {
@@ -161,6 +163,9 @@ int main(int argc, const char **argv) {
   std::cout << "Scaling Test Parameters" << std::endl;
   std::cout << "-----------------------" << std::endl;
   std::cout << "Nparticles = " << Nparticles << std::endl;
+  fmm_select(compressed ? args::get(compressed) != 0 : false);
+  std::cout << "operators  = " << fmm->name
+            << (fmm_have_compressed() ? "" : " (compressed set not generated)") << std::endl;
   std::cout << "ncrit      = " << ncrit << std::endl;
   std::cout << "theta      = " << theta << std::endl;
   std::cout << "FMMGEN_MINORDER = " << FMMGEN_MINORDER << std::endl;
