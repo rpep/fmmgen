@@ -1,12 +1,18 @@
 """
 pytest configuration for fmmgen tests.
 
-This file configures the test environment to use g++-15 for compiling
-Cython extensions via pyximport, ensuring OpenMP support works correctly.
+This file picks a compiler for pyximport/Cython compilation on macOS,
+where Apple's system clang does not support -fopenmp. Linux runners
+(including CI) already ship a gcc/g++ with OpenMP support, so CC/CXX
+are left alone there.
 """
 import os
+import platform
+import shutil
 
-# Configure compiler for pyximport/Cython compilation
-# This is needed because Apple's clang doesn't support -fopenmp flag
-os.environ['CC'] = 'g++-15'
-os.environ['CXX'] = 'g++-15'
+if platform.system() == "Darwin" and "CC" not in os.environ:
+    for gxx in ("g++-15", "g++-14", "g++-13", "g++-12", "g++-11"):
+        if shutil.which(gxx):
+            os.environ["CC"] = gxx
+            os.environ["CXX"] = gxx
+            break
