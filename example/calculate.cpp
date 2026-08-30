@@ -117,8 +117,14 @@ void interact_dehnen_lazy(const size_t A, const size_t B,
       dehnen_step(frontier[f].target, frontier[f].source, cells, theta, ncrit,
                   M2L_list, P2P_list, &next);
     }
-    if (next.empty()) break;     // fully classified during expansion
+    // Swap before checking emptiness: on break, frontier must become the
+    // (now-empty) set of pairs still needing depth-first work, not the set
+    // just fully classified by dehnen_step above -- otherwise the depth-first
+    // phase below re-classifies and double-counts every pair from the last
+    // breadth-first round. Only reachable for trees small enough to fully
+    // classify before target_tasks pairs accumulate.
     frontier.swap(next);
+    if (frontier.empty()) break;
   }
 
   std::vector<std::vector<Interaction>> m2l_buf(frontier.size());
