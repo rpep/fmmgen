@@ -21,7 +21,7 @@ OpenMP-parallelised reference implementation of both the FMM and Barnes-Hut tree
 traversal in the `example` folder, built around the generated operators, that you can
 drop straight into your own code rather than writing a tree code from scratch.
 
-fmmgen was written as part of the PhD research of Ryan Alexander Pepper at the University
+fmmgen was originally written as part of the PhD research of Ryan Alexander Pepper at the University
 of Southampton, and is described in the accompanying paper (see [References](#references)
 below). fmmgen is licensed under the MIT License.
 
