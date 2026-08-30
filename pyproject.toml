@@ -4,6 +4,7 @@ version = "0.2.0"
 description = "Tool for generating functions to generate Cartesian multipole expansions and fast multipole and Barnes-Hut codes that use these"
 authors = [{ name = "Ryan Pepper", email = "ryan.pepper@onyxinsight.com" }]
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.23.4,<3",

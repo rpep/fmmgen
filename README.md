@@ -8,7 +8,7 @@
 This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
 It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
 
-The library is written in Python, and requires at least version 3.12. The package has few dependencies; the main one is the SymPy library. fmmgen is licensed under the 3-Clause BSD License.
+The library is written in Python, and requires at least version 3.12. The package has few dependencies; the main one is the SymPy library. fmmgen is licensed under the MIT License.
 
 fmmgen consists of several parts:
 
