@@ -41,7 +41,7 @@ The project uses [uv](https://docs.astral.sh/uv/) for dependency management. To 
 ```bash
 uv sync --all-groups
 uv run pytest tests
-uv run flake8 fmmgen tests
+uv run ruff check fmmgen tests
 ```
 
 ## Example
