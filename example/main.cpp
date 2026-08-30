@@ -106,71 +106,55 @@ static void bind_threads_to_cores() {
 #endif
 }
 
-int main(int argc, const char **argv) {
-  bind_threads_to_cores();
-
-  // Set initial parameters by user input from
-  // the command line:
-  args::ArgumentParser parser("Fmmgen Example Code.", "This shows how the program scales and prints field,\n"
-                                                      "error, and particle position and source strengths\n"
-                                                      "to a file");
-
-  args::HelpFlag help(parser, "help", "Display this help menu", {'h', "help"});
-  args::Flag nodirect(parser, "Disable calculate direct", "Disables direct field calculation", {'d', "nodirect"});
-  args::ValueFlag<size_t> nparticles(parser, "nparticles", "The total number of particles", {'n', "nparticles"});
-  args::ValueFlag<float> thet(parser, "theta", "The opening angle parameter which controls error", {'t', "theta"});
-  args::ValueFlag<size_t> nc(parser, "ncrit", "The maximum number of particles in a cell", {"n", "ncrit"});
-  args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"T", "type"});
-  args::ValueFlag<std::string> filelabel(parser, "label", "Label for the output files", {"l", "label"});
-  args::ValueFlag<int> compressed(parser, "compress", "Use harmonic-compressed operators (0/1)", {"c", "compress"});
-
-  try
-  {
-      parser.ParseCLI(argc, argv);
-  }
-  catch (const args::Completion& e)
-  {
-      std::cout << e.what();
-      return 0;
-  }
-  catch (const args::Help&)
-  {
-      std::cout << parser;
-      return 0;
-  }
-  catch (const args::ParseError& e)
-  {
-      std::cerr << e.what() << std::endl;
-      std::cerr << parser;
-      return 1;
-  }
-
+struct Args {
   size_t Nparticles, ncrit, type;
   double theta;
-  // parser.parse(argc, argv);
-  if (nparticles) {Nparticles = args::get(nparticles);}
-  else {Nparticles = 10000;}
-  if (nc) {ncrit = args::get(nc);}
-  else {ncrit = 64;}
-  if (thet) {theta = args::get(thet);}
-  else {theta = 0.4;}
-  if (typ) {type = args::get(typ);}
-  else {type = 0;}
-  if (type > 1) {
-    throw std::runtime_error("Type must be either 0 (Fast Multipole) or 1 (Barnes-Hut)");
-  }
+  bool nodirect;
+  bool compressed_set;
+  int compressed;
+  std::string filelabel;
+  bool have_filelabel;
+};
+
+// D=2 generates particles confined to the z=0 plane (a "planar" tree, see
+// tree.hpp) with positions stored 2-wide; D=3 is the ordinary octree case
+// with 3-wide positions. Source strengths (FMMGEN_SOURCESIZE-wide) are always
+// full, regardless of D -- a planar dipole still has 3 moment components.
+//
+// Dimension determines the operator variant; it is not an independent choice
+// crossed with it. A D=2 tree's positions have no z component AT ALL (see
+// Tree<D>::body), so the planar operators -- built assuming z=0, and never
+// reading their z argument as anything else -- are the only ones that are
+// even meaningful, let alone correct, to call. Conversely a D=3 tree's z can
+// be genuinely nonzero, so calling planar operators there would silently
+// compute the wrong field rather than merely waste the memory/compute the
+// planar reduction would have saved. --compress remains a real choice, but
+// only for D=3, where positions are general and the compressed operators'
+// harmonicity-based reduction (not a positional one) still applies.
+template <int D>
+int run(const Args &args) {
+  const size_t Nparticles = args.Nparticles;
+  const size_t ncrit = args.ncrit;
+  const double theta = args.theta;
+  const size_t type = args.type;
 
   std::cout << "Scaling Test Parameters" << std::endl;
   std::cout << "-----------------------" << std::endl;
+  std::cout << "Dimension  = " << D << (D == 2 ? " (planar)" : "") << std::endl;
   std::cout << "Nparticles = " << Nparticles << std::endl;
-  fmm_select(compressed ? args::get(compressed) != 0 : false);
-  std::cout << "operators  = " << fmm->name
-            << (fmm_have_compressed() ? "" : " (compressed set not generated)") << std::endl;
+  if constexpr (D == 2) {
+    fmm_select(FMMVariantKind::Planar);
+  } else {
+    fmm_select((args.compressed_set && args.compressed != 0)
+                   ? FMMVariantKind::Compressed
+                   : FMMVariantKind::Full);
+  }
+  std::cout << "operators  = " << fmm->name << std::endl;
   std::cout << "ncrit      = " << ncrit << std::endl;
   std::cout << "theta      = " << theta << std::endl;
   std::cout << "FMMGEN_MINORDER = " << FMMGEN_MINORDER << std::endl;
   std::cout << "FMMGEN_MAXORDER = " << FMMGEN_MAXORDER << std::endl;
-  std::cout << "FMMGEN_SOURCEORDER = " << FMMGEN_SOURCEORDER << std::endl;  
+  std::cout << "FMMGEN_SOURCEORDER = " << FMMGEN_SOURCEORDER << std::endl;
   std::cout << "FMMGEN_OUTPUTSIZE = " << FMMGEN_OUTPUTSIZE << std::endl;
   std::cout << "FMMGEN_SOURCESIZE = " << FMMGEN_SOURCESIZE << std::endl;
   std::cout << "FMMGEN TYPE = ";
@@ -186,20 +170,19 @@ int main(int argc, const char **argv) {
   std::default_random_engine generator(0.0);
   std::uniform_real_distribution<double> distribution(-1, 1);
 
-  double mux_total = 0.0;
-  double muy_total = 0.0;
-  double muz_total = 0.0;
-
-  // Array containing r and source strengths
-  double *r = new double[3*Nparticles];
+  // Array containing D-wide positions and FMMGEN_SOURCESIZE-wide source
+  // strengths. For D=2 this never allocates or fills a z-component -- a
+  // planar run has nothing to zero out, unlike forcing r[3*i+2]=0.0 in a
+  // fixed-3-wide array would.
+  double *r = new double[D*Nparticles];
   double *S = new double[FMMGEN_SOURCESIZE*Nparticles];
   auto filename = "particles_n_" + std::to_string(Nparticles) + ".txt";
   std::ofstream fout;
   fout.open(filename);
   for (size_t i = 0; i < Nparticles; i++) {
-    for(int j = 0; j < 3; j++) {
-      r[3*i+j] = distribution(generator) * 1e-9;
-      fout << r[3*i+j] << ",";
+    for(int j = 0; j < D; j++) {
+      r[D*i+j] = distribution(generator) * 1e-9;
+      fout << r[D*i+j] << ",";
     }
     for(int j = 0; j < FMMGEN_SOURCESIZE; j++) {
       S[FMMGEN_SOURCESIZE*i + j] = distribution(generator);
@@ -214,14 +197,15 @@ int main(int argc, const char **argv) {
   double t_approx;
 
   auto base_filename = "_n_" + std::to_string(Nparticles) +
-    "_ncrit_" + std::to_string(ncrit) +                                                                               
+    "_ncrit_" + std::to_string(ncrit) +
     "_theta_" + std::to_string(theta) +
-    "_type_" + std::to_string(type);
-  if (filelabel) {                                                                                                                     
-    base_filename += "_label_" + args::get(filelabel);
+    "_type_" + std::to_string(type) +
+    "_d_" + std::to_string(D);
+  if (args.have_filelabel) {
+    base_filename += "_label_" + args.filelabel;
   }
   base_filename += ".txt";
-  
+
 
   auto time_filename = "times" + base_filename;
 
@@ -233,11 +217,11 @@ int main(int argc, const char **argv) {
 
     // If you're wanting to use the library, this is the part you need to look at!
     // Warning: Check what the standard of your field of study is. Various
-    // conventions apply for the sign with regards to dipole and quadrupole 
+    // conventions apply for the sign with regards to dipole and quadrupole
     // orientation!
-    Tree tree = build_tree(r, S, Nparticles, ncrit, order, theta);
+    Tree<D> tree = build_tree<D>(r, S, Nparticles, ncrit, order, theta);
     std::fill(F_approx.begin(), F_approx.end(), 0);
-    if (order == FMMGEN_MINORDER && !nodirect) {
+    if (order == FMMGEN_MINORDER && !args.nodirect) {
       std::cout << "Direct\n-------" << std::endl;
       Timer timer;
       tree.compute_field_exact(F_exact.data());
@@ -263,11 +247,7 @@ int main(int argc, const char **argv) {
     timeout << order << "," << t_approx << std::endl;
 
     // If direct calculation is enabled, check the error:
-    if (!nodirect) {
-        double Exrel_err = 0;
-        double Eyrel_err = 0;
-        double Ezrel_err = 0;
-
+    if (!args.nodirect) {
         std::ofstream errout(errs_filename);
 
         double errs[FMMGEN_OUTPUTSIZE] = {0.0};
@@ -290,7 +270,7 @@ int main(int argc, const char **argv) {
     std::cout << "Approx. calculation  = " << t_approx << " seconds. " << std::endl;
 
     // If direct calculation enabled, print the field to a file for checking
-    if (!nodirect) {
+    if (!args.nodirect) {
       std::ofstream fieldout(field_filename);
       // Default ostream precision is 6 significant figures, which floors any
       // relative error computed from this file at ~1e-7. At high expansion
@@ -308,4 +288,65 @@ int main(int argc, const char **argv) {
   delete[] r;
   delete[] S;
   return 0;
+}
+
+int main(int argc, const char **argv) {
+  bind_threads_to_cores();
+
+  // Set initial parameters by user input from
+  // the command line:
+  args::ArgumentParser parser("Fmmgen Example Code.", "This shows how the program scales and prints field,\n"
+                                                      "error, and particle position and source strengths\n"
+                                                      "to a file");
+
+  args::HelpFlag help(parser, "help", "Display this help menu", {'h', "help"});
+  args::Flag nodirect(parser, "Disable calculate direct", "Disables direct field calculation", {'d', "nodirect"});
+  args::ValueFlag<size_t> nparticles(parser, "nparticles", "The total number of particles", {'n', "nparticles"});
+  args::ValueFlag<float> thet(parser, "theta", "The opening angle parameter which controls error", {'t', "theta"});
+  args::ValueFlag<size_t> nc(parser, "ncrit", "The maximum number of particles in a cell", {"n", "ncrit"});
+  args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"T", "type"});
+  args::ValueFlag<std::string> filelabel(parser, "label", "Label for the output files", {"l", "label"});
+  args::ValueFlag<int> compressed(parser, "compress", "Use harmonic-compressed operators (0/1). D=3 only: a D=2 run always uses the planar operators.", {"c", "compress"});
+  args::ValueFlag<size_t> dim(parser, "dim", "Spatial dimension of particle positions: 2 (planar, z=0, always uses the planar operators) or 3 (default; --compress selects between full and harmonic-compressed)", {"D", "dim"});
+
+  try
+  {
+      parser.ParseCLI(argc, argv);
+  }
+  catch (const args::Completion& e)
+  {
+      std::cout << e.what();
+      return 0;
+  }
+  catch (const args::Help&)
+  {
+      std::cout << parser;
+      return 0;
+  }
+  catch (const args::ParseError& e)
+  {
+      std::cerr << e.what() << std::endl;
+      std::cerr << parser;
+      return 1;
+  }
+
+  Args args_;
+  args_.Nparticles = nparticles ? args::get(nparticles) : 10000;
+  args_.ncrit = nc ? args::get(nc) : 64;
+  args_.theta = thet ? args::get(thet) : 0.4;
+  args_.type = typ ? args::get(typ) : 0;
+  args_.nodirect = (bool)nodirect;
+  args_.compressed_set = (bool)compressed;
+  args_.compressed = compressed ? args::get(compressed) : 0;
+  args_.have_filelabel = (bool)filelabel;
+  args_.filelabel = filelabel ? args::get(filelabel) : "";
+
+  if (args_.type > 1) {
+    throw std::runtime_error("Type must be either 0 (Fast Multipole) or 1 (Barnes-Hut)");
+  }
+
+  const size_t D = dim ? args::get(dim) : 3;
+  if (D == 2) return run<2>(args_);
+  if (D == 3) return run<3>(args_);
+  throw std::runtime_error("--dim must be 2 or 3");
 }

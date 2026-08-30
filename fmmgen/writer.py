@@ -12,6 +12,9 @@ import textwrap
 from fmmgen.harmonic import Nkeep
 from fmmgen.generator import (
     _keep_sets,
+    _keep_sets_planar,
+    Nterms_planar,
+    Nterms_planar_M,
     generate_mappings,
     generate_S2M_operators,
     generate_M_shift_operators,
@@ -27,6 +30,13 @@ from fmmgen.generator import (
     generate_L2P_operators_compressed,
     generate_M2P_operators_compressed,
     generate_M2L_compressed,
+    generate_S2M_operators_planar,
+    generate_M_shift_operators_planar,
+    generate_L_shift_operators_planar,
+    generate_L2P_operators_planar,
+    generate_M2P_operators_planar,
+    generate_M2L_planar,
+    generate_P2P_operators_planar,
 )
 
 import logging
@@ -46,6 +56,7 @@ def generate_code(
     CSE=False,
     harmonic_derivs=False,
     compress=False,
+    planar=False,
     include_dir=None,
     src_dir=None,
     potential=True,
@@ -111,6 +122,41 @@ def generate_code(
         (a quadrupole's 6 monomials to 5 retained, since the trace of a
         quadrupole moment contributes nothing to a Laplace field) and S2M would
         have to project the caller's moment array. Rejected rather than guessed.
+
+    planar, bool:
+        Sources (and, for the local array's retained set, evaluation points)
+        confined to the z=0 plane, with moment vectors that remain full 3D --
+        e.g. an atomistic dipole in a monolayer still has a (mux, muy, muz)
+        moment. This is a positional degeneracy in the ordinary 1/R kernel,
+        not the 2D Laplace log(r) kernel a translationally-invariant-along-z
+        source would need.
+
+        Every translation vector is a difference of z=0 coordinates and
+        hence identically zero, which the multipole array's construction
+        propagates into a hard bound: only n_z <= source_order can ever be
+        nonzero (the source's own moment shell is the only place z-content
+        enters; every displacement power in M_shift's recursion is dz**k
+        with dz=0, killing k >= 1). The local array's bound is independent
+        of source_order and instead follows from what L2P asks for: n_z <= 1
+        if the field is wanted (Fz needs one extra z-derivative before
+        evaluating at dz=0), else n_z <= 0. See fmmgen.generator's "Planar
+        operator variants" section for the full derivation.
+
+        Unlike compress, excluded entries are provably zero rather than a
+        linear combination of retained ones, so there is no source_order cap
+        here -- a quadrupole's own moment shell (n_z up to 2) is exactly what
+        the retained set is built to include.
+
+        Emitted ALONGSIDE the uncompressed (and, if also requested,
+        compressed) operators under an 'xy' suffix -- M2Lxy_5 beside M2L_5
+        (and M2Lc_5) -- guarded by FMMGEN_PLANAR and its own
+        FMMGEN_PLANAR_MULTIPOLESIZE/FMMGEN_PLANAR_LOCALSIZE tables. Freely
+        combinable with compress: the two are independent linear reductions
+        of the same uncompressed operators, not alternatives, and requesting
+        both does not produce some fourth hybrid array.
+
+        With planar=False nothing above is altered, so the output is
+        byte-identical to that of a build without this option.
 
     source_order, int:
         If source_order > 0 then we set certain multipole terms to zero
@@ -360,6 +406,64 @@ def generate_code(
             body += code + "\n"
             print(f"M2Lc_{i} opscount = {n}")
 
+        # Planar variant, emitted ALONGSIDE the above -- independent of, and
+        # freely combinable with, compress (see the planar docstring). Same
+        # "hand in the already-built uncompressed lists" pattern.
+        if planar:
+            keep_M, keep_L = _keep_sets_planar(i, symbols, source_order, field=field)
+            Mxy = sp.MatrixSymbol("M", len(keep_M), 1)
+            Lxy = sp.MatrixSymbol("L", len(keep_L), 1)
+
+            for nm, lhs, ops, inputs in (
+                ("S2Mxy", "M",
+                 generate_S2M_operators_planar(i, symbols, M_dict, keep_M,
+                                               source_order=source_order,
+                                               ops=list(S2M)),
+                 list(symbols) + [sp.MatrixSymbol("S", source_size, 1)]),
+                ("M2Mxy", "Ms",
+                 generate_M_shift_operators_planar(i, symbols, M_dict, keep_M,
+                                                   source_order=source_order,
+                                                   ops=list(Ms)),
+                 list(symbols) + [Mxy]),
+                ("L2Lxy", "Ls",
+                 generate_L_shift_operators_planar(i, symbols, L_dict, keep_L,
+                                                   source_order=source_order,
+                                                   ops=list(Ls)),
+                 list(symbols) + [Lxy]),
+                ("L2Pxy", "F",
+                 generate_L2P_operators_planar(i, symbols, L_dict, keep_L,
+                                               potential=potential, field=field,
+                                               ops=list(L2P)),
+                 list(symbols) + [Lxy]),
+                ("M2Pxy", "F",
+                 generate_M2P_operators_planar(i, symbols, M_dict, keep_M,
+                                               potential=potential, field=field,
+                                               source_order=source_order,
+                                               harmonic_derivs=harmonic_derivs,
+                                               ops=list(M2P)),
+                 list(symbols) + [Mxy]),
+            ):
+                head, code, n = p.generate(
+                    f"{nm}_{i}", lhs, sp.Matrix(ops), inputs,
+                    operator="+=", atomic=atomic,
+                )
+                header += head
+                body += code + "\n"
+                print(f"{nm}_{i} opscount = {n}")
+
+            dv, L_ops = generate_M2L_planar(
+                i, symbols, M_dict, L_dict, keep_M, keep_L,
+                source_order=source_order, harmonic_derivs=harmonic_derivs,
+                ops=list(L),
+            )
+            head, code, n = p.generate(
+                f"M2Lxy_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mxy],
+                operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
+            )
+            header += head
+            body += code + "\n"
+            print(f"M2Lxy_{i} opscount = {n}")
+
         if i == start:
             P2P = sp.Matrix(
                 generate_P2P_operators(
@@ -397,6 +501,40 @@ def generate_code(
             )
             header += head
             body += code + "\n"
+
+            # Planar P2P: both particles confined to z=0. Unlike the other
+            # planar operators there is no array to lift/restrict (P2P reads
+            # the caller's raw source array directly, sized by source_order
+            # alone), so this is z=0 substituted into the already-built P2P
+            # expressions -- same output size (Fz is not dropped: it is only
+            # provably zero at source_order=0, see generate_P2P_operators_planar)
+            # -- and, for the batched form, genuinely 2 position arguments
+            # rather than 3 with a zero padded in, since the batch kernel's
+            # source-coordinate arrays are declared directly from the symbol
+            # list handed to generate_batch.
+            if planar:
+                P2Pxy = sp.Matrix(
+                    generate_P2P_operators_planar(
+                        symbols, M_dict, potential=potential, field=field,
+                        source_order=source_order, ops=list(P2P),
+                    )
+                )
+                head, code, P2Pxy_opscount = p.generate(
+                    "P2Pxy", "F", P2Pxy,
+                    list(symbols)[:2] + [sp.MatrixSymbol("S", Nterms(i), 1)],
+                    operator="+=", atomic=atomic,
+                )
+                print(f"P2Pxy opscount = {P2Pxy_opscount}")
+                header += head
+                body += code + "\n"
+
+                head, code, _ = p.generate_batch(
+                    "P2P_batchxy", "F", P2Pxy,
+                    [str(sym) for sym in symbols[:2]],
+                    Nterms(source_order) - Nterms(source_order - 1),
+                )
+                header += head
+                body += code + "\n"
 
         if save_opscounts:
             if i == start:
@@ -492,6 +630,26 @@ def generate_code(
         )
         f.write(f"static const size_t FMMGEN_MULTIPOLESIZE[] = {{{msizes}}};\n")
         f.write(f"static const size_t FMMGEN_LOCALSIZE[] = {{{lsizes}}};\n")
+    if planar:
+        # Independent of FMMGEN_COMPRESSED -- both can be defined in the same
+        # header, since the two variants never touch each other's arrays.
+        # The multipole cutoff is source_order (not a fixed 1: see the planar
+        # docstring), so unlike FMMGEN_MULTIPOLESIZE this table is NOT the
+        # same at every source_order and must be computed per source_order,
+        # not assumed to equal FMMGEN_MULTIPOLESIZE even when compress is
+        # also set.
+        pmsizes = ", ".join(str(Nterms_planar_M(o, source_order)) for o in range(order + 1))
+        plsizes = ", ".join(
+            str(Nterms_planar(o - source_order, 1 if field else 0)) for o in range(order + 1)
+        )
+        f.write("#define FMMGEN_PLANAR 1\n")
+        f.write(
+            "/* Array sizes for the *xy-suffixed* operators only. Retained set is\n"
+            "   n_z <= source_order for the multipole array, n_z <= 1 (field) or\n"
+            "   <= 0 (potential only) for the local array. Index by order. */\n"
+        )
+        f.write(f"static const size_t FMMGEN_PLANAR_MULTIPOLESIZE[] = {{{pmsizes}}};\n")
+        f.write(f"static const size_t FMMGEN_PLANAR_LOCALSIZE[] = {{{plsizes}}};\n")
     f.write(header)
     f.close()
 

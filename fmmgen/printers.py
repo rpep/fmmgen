@@ -127,9 +127,19 @@ class FunctionPrinter:
         operator="=",
         atomic=False,
         ignore_symbols=[],
+        coords=None,
     ):
         opscount = 0
         code = ""
+
+        # R/Rinv's definition below must only reference coordinates the
+        # function actually has as parameters. Every operator used to take
+        # x, y AND z, so hardcoding all three was never wrong -- the planar
+        # (2D-plane) 2-argument P2P/P2P_batch variants are the first
+        # functions generated without z in scope at all, and referencing it
+        # anyway is a compile error, not a warning.
+        if coords is None:
+            coords = sp.symbols("x y z")
 
         # Rinv is emitted as 1.0/sqrt(...) rather than pow(..., -0.5).
         #
@@ -149,10 +159,11 @@ class FunctionPrinter:
         #
         # R is left as sqrt() in case it gets used in expansions in future.
 
+        r_squared = " + ".join(f"{s}*{s}" for s in coords)
         if sp.symbols("R") in matrix.free_symbols:
-            code += f"{self.precision} R = sqrt(x*x + y*y + z*z);\n"
+            code += f"{self.precision} R = sqrt({r_squared});\n"
         if sp.symbols("Rinv") in matrix.free_symbols:
-            code += f"{self.precision} Rinv = 1.0 / sqrt(x*x + y*y + z*z);\n"
+            code += f"{self.precision} Rinv = 1.0 / sqrt({r_squared});\n"
 
         if allocate:
             code += f"{self.precision} {name}[{len(matrix)}];\n"
@@ -204,18 +215,19 @@ class FunctionPrinter:
             code += tmp + "\n"
         return code, opscount
 
-    def _generate_body(self, LHS, RHS, internal=[], operator="=", atomic=False, ignore=[]):
+    def _generate_body(self, LHS, RHS, internal=[], operator="=", atomic=False, ignore=[], coords=None):
         # Find the reduced RHS equation.
         opscount = 0
         logger.debug(f"Generating body for LHS = {str(LHS)}")
         code = ""
 
         for arr_name, matrix in internal:
-            codetext, ops = self._array(arr_name, matrix, allocate=True, ignore_symbols=[arr_name] + ignore)
+            codetext, ops = self._array(arr_name, matrix, allocate=True,
+                                        ignore_symbols=[arr_name] + ignore, coords=coords)
             code += codetext
             opscount += ops
 
-        codetext, ops = self._array(LHS, RHS, operator=operator, atomic=atomic)
+        codetext, ops = self._array(LHS, RHS, operator=operator, atomic=atomic, coords=coords)
         code += codetext
         opscount += ops
         return code, opscount
@@ -267,7 +279,10 @@ class FunctionPrinter:
         )
         header = "void {}({})".format(name, args)
 
-        body, opscount = self._array(LHS, RHS, operator="+=", atomic=False)
+        # symbols here IS the coordinate list (strings): 2-wide for the
+        # planar batch kernels, 3-wide otherwise.
+        coords = sp.symbols(" ".join(symbols)) if len(symbols) > 1 else (sp.Symbol(symbols[0]),)
+        body, opscount = self._array(LHS, RHS, operator="+=", atomic=False, coords=coords)
 
         # Retarget the emitted body into the loop:
         #   S[k]    -> S[source_size*u + k]  (this source's moments)
@@ -293,9 +308,17 @@ class FunctionPrinter:
         return header + ";\n", "\n".join(lines) + "\n", opscount
 
     def generate(self, name, LHS, RHS, inputs, operator="=", atomic=False, internal=[], ignore=[]):
+        # Plain-Symbol inputs are coordinates (x, y, [z]); MatrixSymbol ones
+        # are arrays (M, L, S, ...). Extracted before _generate_header, which
+        # mutates `inputs` by appending LHS. Every operator used to take x, y
+        # AND z, so R/Rinv's definition (built from this list, see _array)
+        # was always safe to hardcode as 3-wide -- the planar 2-argument
+        # P2P/P2P_batch variants are the first functions without z at all.
+        coords = tuple(s for s in inputs if type(s) is not sp.MatrixSymbol)
         header = self._generate_header(name, LHS, RHS, inputs)
         code = header + " {\n"
-        codetext, opscount = self._generate_body(LHS, RHS, internal, operator, atomic=atomic, ignore=ignore)
+        codetext, opscount = self._generate_body(LHS, RHS, internal, operator, atomic=atomic,
+                                                 ignore=ignore, coords=coords)
         code += codetext
         code += "\n}\n"
         header += ";\n"
