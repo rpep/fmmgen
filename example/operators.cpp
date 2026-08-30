@@ -227,6 +227,38 @@ F[2] += facc2;
 F[3] += facc3;
 }
 
+void P2Pxy(double x, double y, double * S, double * F) {
+double Rinv = 1.0 / sqrt(x*x + y*y);
+double Ftmp0 = (Rinv*Rinv*Rinv)*S[0];
+F[0] += Rinv*S[0];
+F[1] += Ftmp0*x;
+F[2] += Ftmp0*y;
+F[3] += 0;
+
+}
+
+void P2P_batchxy(double tx, double ty, const double * sx, const double * sy, const double * S, size_t begin, size_t end, double * F) {
+double facc0 = 0.0;
+double facc1 = 0.0;
+double facc2 = 0.0;
+double facc3 = 0.0;
+#pragma omp simd reduction(+:facc0,facc1,facc2,facc3)
+for (size_t u = begin; u < end; u++) {
+double x = tx - sx[u];
+double y = ty - sy[u];
+double Rinv = 1.0 / sqrt(x*x + y*y);
+double Ftmp0 = (Rinv*Rinv*Rinv)*S[1*u + 0];
+facc0 += Rinv*S[1*u + 0];
+facc1 += Ftmp0*x;
+facc2 += Ftmp0*y;
+facc3 += 0;
+}
+F[0] += facc0;
+F[1] += facc1;
+F[2] += facc2;
+F[3] += facc3;
+}
+
 void S2M_2(double x, double y, double z, double * S, double * M) {
 double Mtmp0 = x*S[0];
 double Mtmp1 = y*S[0];

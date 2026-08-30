@@ -235,3 +235,39 @@ def test_m2p(p, s):
         {**coords, **_comp_subs("M", Mt)},
     )
     assert np.allclose(got, ref, atol=TOL)
+
+
+@pytest.mark.parametrize("s", (0, 1, 2))
+def test_p2p(s):
+    """
+    Planar P2P matches the general one at z=0, for both particles of the
+    pair. Unlike every other planar operator there is no array to
+    lift/restrict here -- P2P reads the caller's raw source array directly,
+    sized by source_order alone -- so this exercises generate_P2P_operators_planar
+    on its own rather than through _setup/_keep_sets_planar.
+    """
+    rng = np.random.default_rng(700 + 50 * s)
+    M_dict, _ = generate_mappings(s, symbols, source_order=s)
+    ops = g.generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_order=s)
+    ops_xy = g.generate_P2P_operators_planar(symbols, M_dict, potential=True, field=True,
+                                             source_order=s, ops=ops)
+    assert len(ops) == len(ops_xy)  # output size is NOT reduced -- see the
+    # module docstring on generate_P2P_operators_planar for why Fz is kept.
+
+    nsrc = Nterms(s)  # generate_P2P_operators' own internal S array size
+    S = sp.MatrixSymbol("S", nsrc, 1)
+    s_subs = {S[i]: float(v) for i, v in enumerate(rng.standard_normal(nsrc))}
+    dx, dy = float(rng.uniform(0.5, 2)), float(rng.uniform(0.5, 2))
+    coords = {x: dx, y: dy, z: 0.0, sp.Symbol("Rinv"): 1.0 / np.sqrt(dx**2 + dy**2)}
+
+    ref = _evaluate(ops, {**coords, **s_subs})
+    got = _evaluate(ops_xy, {**coords, **s_subs})
+    assert np.allclose(got, ref, atol=TOL)
+
+    if s == 0:
+        # The one case where Fz (last entry, potential+field both on) really
+        # is exactly zero: a monopole's potential is even in z, so its
+        # z-derivative vanishes at z=0. Pinned symbolically, not just at one
+        # random point -- see test_planar.py for the s=1 contrast (genuinely
+        # nonzero, via the dipole's own muz).
+        assert sp.simplify(sp.sympify(ops_xy[-1])) == 0

@@ -335,6 +335,37 @@ def generate_P2P_operators(symbols, M_dict, potential=True, field=True, source_o
     return terms
 
 
+def generate_P2P_operators_planar(symbols, M_dict, potential=True, field=True,
+                                  source_order=0, ops=None):
+    """
+    Planar P2P: both particles of the pair confined to z=0.
+
+    Unlike every other planar operator, there is no array to lift or restrict
+    here -- P2P reads the caller's raw source array directly, and that array's
+    size is fixed by source_order alone, unrelated to position dimensionality
+    (a planar dipole still has 3 moment components). So this is nothing more
+    than the ordinary z=0 substitution applied to the already-built,
+    already-differentiated expressions.
+
+    The output stays the SAME SIZE as the general P2P (matching the single,
+    variant-independent FMMGEN_OUTPUTSIZE the driver indexes every operator's
+    output by) -- Fz is NOT dropped, unlike the temptation to do so. It is
+    identically zero only at source_order=0 (a monopole's potential is even
+    in z, so its z-derivative vanishes at z=0); at source_order=1 a dipole's
+    own muz component keeps Fz genuinely nonzero even for two in-plane
+    particles, exactly as for L2P/M2P's n_z=1 shell (verified: see
+    tests/test_planar.py's P2P case). Substituting z=0 still earns its keep
+    by simplifying R (loses its z**2 term entirely, standard sympy
+    simplification, no special-casing needed) and cascading through
+    whatever CSE finds in the surviving Fx/Fy/(Fz) formulas.
+    """
+    if ops is None:
+        ops = generate_P2P_operators(symbols, M_dict, potential=potential,
+                                     field=field, source_order=source_order)
+    z = symbols[2]
+    return [sp.sympify(e).xreplace({z: 0}) for e in ops]
+
+
 # --------------------------------------------------------------------------
 # Compressed (harmonic / trace-free) operator variants
 #

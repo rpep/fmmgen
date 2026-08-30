@@ -36,6 +36,7 @@ from fmmgen.generator import (
     generate_L2P_operators_planar,
     generate_M2P_operators_planar,
     generate_M2L_planar,
+    generate_P2P_operators_planar,
 )
 
 import logging
@@ -500,6 +501,40 @@ def generate_code(
             )
             header += head
             body += code + "\n"
+
+            # Planar P2P: both particles confined to z=0. Unlike the other
+            # planar operators there is no array to lift/restrict (P2P reads
+            # the caller's raw source array directly, sized by source_order
+            # alone), so this is z=0 substituted into the already-built P2P
+            # expressions -- same output size (Fz is not dropped: it is only
+            # provably zero at source_order=0, see generate_P2P_operators_planar)
+            # -- and, for the batched form, genuinely 2 position arguments
+            # rather than 3 with a zero padded in, since the batch kernel's
+            # source-coordinate arrays are declared directly from the symbol
+            # list handed to generate_batch.
+            if planar:
+                P2Pxy = sp.Matrix(
+                    generate_P2P_operators_planar(
+                        symbols, M_dict, potential=potential, field=field,
+                        source_order=source_order, ops=list(P2P),
+                    )
+                )
+                head, code, P2Pxy_opscount = p.generate(
+                    "P2Pxy", "F", P2Pxy,
+                    list(symbols)[:2] + [sp.MatrixSymbol("S", Nterms(i), 1)],
+                    operator="+=", atomic=atomic,
+                )
+                print(f"P2Pxy opscount = {P2Pxy_opscount}")
+                header += head
+                body += code + "\n"
+
+                head, code, _ = p.generate_batch(
+                    "P2P_batchxy", "F", P2Pxy,
+                    [str(sym) for sym in symbols[:2]],
+                    Nterms(source_order) - Nterms(source_order - 1),
+                )
+                header += head
+                body += code + "\n"
 
         if save_opscounts:
             if i == start:

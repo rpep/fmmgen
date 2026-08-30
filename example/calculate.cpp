@@ -15,6 +15,33 @@ static inline double zc(const std::array<double, D> &centre) {
   else return 0.0;
 }
 
+// Dispatches to the genuinely 2-argument-position P2P_batchxy for a planar
+// (D=2) tree, or the ordinary 3-argument P2P_batch otherwise. Guarded by
+// FMMGEN_PLANAR so example driver builds that never set planar=True still
+// compile for D=3 -- the fallback (#else branch) pads with the tz/bz the
+// caller already has, exactly as every other operator call in this file
+// does via zc<D>()/Tree::body_z_zero, and is what every call site used
+// unconditionally before this existed.
+#ifdef FMMGEN_PLANAR
+template <int D>
+static inline void p2p_batch_dispatch(double tx, double ty, double tz,
+                                      const double *bx, const double *by, const double *bz,
+                                      const double *bS, size_t begin, size_t end, double *F) {
+  if constexpr (D == 2) {
+    P2P_batchxy(tx, ty, bx, by, bS, begin, end, F);
+  } else {
+    P2P_batch(tx, ty, tz, bx, by, bz, bS, begin, end, F);
+  }
+}
+#else
+template <int D>
+static inline void p2p_batch_dispatch(double tx, double ty, double tz,
+                                      const double *bx, const double *by, const double *bz,
+                                      const double *bS, size_t begin, size_t end, double *F) {
+  P2P_batch(tx, ty, tz, bx, by, bz, bS, begin, end, F);
+}
+#endif
+
 template <int D>
 void M_sanity_check(const std::vector<Cell<D>> &cells) {
 	double M0 = 0;
@@ -275,10 +302,10 @@ void evaluate_P2P_lazy(std::vector<Cell<D>> &cells,
                // semantics exactly. Masking on r2 > 0 instead would also drop
                // coincident-but-distinct particles, a silent behaviour change.
                if (t >= bo && t < bo + bn) {
-                   P2P_batch(bx[t], by[t], bz[t], bx, by, bz, body_S, bo, t, Fl);
-                   P2P_batch(bx[t], by[t], bz[t], bx, by, bz, body_S, t+1, bo+bn, Fl);
+                   p2p_batch_dispatch<D>(bx[t], by[t], bz[t], bx, by, bz, body_S, bo, t, Fl);
+                   p2p_batch_dispatch<D>(bx[t], by[t], bz[t], bx, by, bz, body_S, t+1, bo+bn, Fl);
                } else {
-                   P2P_batch(bx[t], by[t], bz[t], bx, by, bz, body_S, bo, bo+bn, Fl);
+                   p2p_batch_dispatch<D>(bx[t], by[t], bz[t], bx, by, bz, body_S, bo, bo+bn, Fl);
                }
            }
        }
@@ -339,8 +366,8 @@ void evaluate_direct(const double *bx, const double *by, const double *bz,
   for (size_t i = 0; i < n; i++) {
     double *const Fl = &F[FMMGEN_OUTPUTSIZE*i];
     // Split around i so the batched kernel stays branch-free.
-    if (i > 0)     P2P_batch(bx[i], by[i], bz[i], bx, by, bz, bS, 0,   i, Fl);
-    if (i + 1 < n) P2P_batch(bx[i], by[i], bz[i], bx, by, bz, bS, i+1, n, Fl);
+    if (i > 0)     p2p_batch_dispatch<D>(bx[i], by[i], bz[i], bx, by, bz, bS, 0, i, Fl);
+    if (i + 1 < n) p2p_batch_dispatch<D>(bx[i], by[i], bz[i], bx, by, bz, bS, i+1, n, Fl);
   }
 }
 
@@ -375,10 +402,10 @@ void evaluate_M2P_and_P2P(const double *bx, const double *by, const double *bz,
     const size_t o = cells[p].body_offset, n = cells[p].nleaf;
     double *const Fl = &F[FMMGEN_OUTPUTSIZE*m];
     if (m >= o && m < o + n) {
-      if (m > o)         P2P_batch(bx[m], by[m], bz[m], bx, by, bz, bS, o, m, Fl);
-      if (m + 1 < o + n) P2P_batch(bx[m], by[m], bz[m], bx, by, bz, bS, m+1, o+n, Fl);
+      if (m > o)         p2p_batch_dispatch<D>(bx[m], by[m], bz[m], bx, by, bz, bS, o, m, Fl);
+      if (m + 1 < o + n) p2p_batch_dispatch<D>(bx[m], by[m], bz[m], bx, by, bz, bS, m+1, o+n, Fl);
     } else {
-      P2P_batch(bx[m], by[m], bz[m], bx, by, bz, bS, o, o+n, Fl);
+      p2p_batch_dispatch<D>(bx[m], by[m], bz[m], bx, by, bz, bS, o, o+n, Fl);
     }
   }
 }
