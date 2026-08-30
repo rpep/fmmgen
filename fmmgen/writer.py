@@ -9,7 +9,7 @@ import sympy as sp
 from fmmgen.printers import FunctionPrinter
 from fmmgen.utils import Nterms
 import textwrap
-from fmmgen.harmonic import Nkeep, keep_mappings
+from fmmgen.harmonic import Nkeep
 from fmmgen.generator import (
     _keep_sets,
     generate_mappings,
@@ -163,7 +163,6 @@ def generate_code(
 
     x, y, z, q = sp.symbols("x y z q")
     symbols = (x, y, z)
-    coords = [x, y, z]
 
     start = source_order
     if field:

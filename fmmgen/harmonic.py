@@ -51,7 +51,7 @@ import functools
 
 import sympy as sp
 
-from .utils import Nterms, generate_mappings
+from .utils import generate_mappings
 
 
 def Nkeep(p, source_order=0):

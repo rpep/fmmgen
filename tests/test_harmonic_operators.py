@@ -18,7 +18,7 @@ import pytest
 import sympy as sp
 
 from fmmgen import generator as g
-from fmmgen.harmonic import Nkeep, decompress, keep_mappings
+from fmmgen.harmonic import keep_mappings
 from fmmgen.utils import Nterms, generate_mappings
 
 symbols = sp.symbols("x y z")
