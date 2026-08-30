@@ -151,6 +151,13 @@ public:
   void compute_field_exact(double *F);
   //! Scatter a Morton-ordered result into the caller's particle ordering.
   void scatter_output(const double *Fm, double *F);
+  //! Re-read source values through the (live) Particle pointers into
+  //! body_S. Positions and tree topology never change after build_tree, but
+  //! callers that reuse one Tree across many solves -- e.g. a spin dynamics
+  //! integrator calling compute_field_* once per timestep with the same
+  //! geometry but a new moment array each time -- need every solve to see
+  //! the current source values, not the ones snapshotted at build time.
+  void refresh_sources();
 private:
   void clear_M();
   void clear_L();

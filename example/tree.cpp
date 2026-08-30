@@ -264,14 +264,13 @@ Tree build_tree(double *pos, double *S, size_t nparticles, size_t ncrit, size_t 
         tree.body_x[off] = particles[l].r[0];
         tree.body_y[off] = particles[l].r[1];
         tree.body_z[off] = particles[l].r[2];
-        for (int d = 0; d < FMMGEN_SOURCESIZE; d++)
-          tree.body_S[FMMGEN_SOURCESIZE*off + d] = particles[l].S[d];
         off++;
       }
     }
     if (off != np) {
       throw std::runtime_error("particle permutation did not cover every particle");
     }
+    tree.refresh_sources();
 
     // Cell::leaf has no readers left: every evaluation stage now addresses
     // particles as the contiguous range [body_offset, body_offset + nleaf) in
@@ -357,11 +356,24 @@ void Tree::clear_Fm() {
   for (size_t i = 0; i < n; i++) f[i] = 0.0;
 }
 
+//! See the declaration in tree.hpp for why this runs every solve rather
+//! than only once in build_tree.
+void Tree::refresh_sources() {
+  const size_t n = body_perm.size();
+  #pragma omp parallel for schedule(static)
+  for (size_t off = 0; off < n; off++) {
+    const double *const S = particles[body_perm[off]].S;
+    for (int d = 0; d < FMMGEN_SOURCESIZE; d++)
+      body_S[FMMGEN_SOURCESIZE*off + d] = S[d];
+  }
+}
+
 void Tree::compute_field_fmm(double *F) {
   // Computed in Morton order, then scattered once into the caller's ordering.
   // Keeping the whole solve in Morton order means every stage writes
   // contiguously; the only permuted access in the entire method is the single
   // pass at the end.
+  refresh_sources();
   clear_Fm();
   clear_M();
   clear_L();
@@ -396,6 +408,7 @@ void Tree::compute_field_fmm(double *F) {
 }
 
 void Tree::compute_field_bh(double *F) {
+  refresh_sources();
   clear_Fm();
   clear_M();
   #pragma omp parallel
@@ -422,6 +435,7 @@ void Tree::compute_field_exact(double *F) {
   // Keeps its own scratch buffer rather than reusing the persistent Tree::Fm:
   // this is the reference solution the approximate methods are measured
   // against, so it must not share state with them.
+  refresh_sources();
   std::vector<double> Fdirect(FMMGEN_OUTPUTSIZE * particles.size(), 0.0);
   evaluate_direct(body_x.data(), body_y.data(), body_z.data(),
                   body_S.data(), Fdirect.data(), particles.size());
