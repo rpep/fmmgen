@@ -120,6 +120,17 @@ struct Args {
 // tree.hpp) with positions stored 2-wide; D=3 is the ordinary octree case
 // with 3-wide positions. Source strengths (FMMGEN_SOURCESIZE-wide) are always
 // full, regardless of D -- a planar dipole still has 3 moment components.
+//
+// Dimension determines the operator variant; it is not an independent choice
+// crossed with it. A D=2 tree's positions have no z component AT ALL (see
+// Tree<D>::body), so the planar operators -- built assuming z=0, and never
+// reading their z argument as anything else -- are the only ones that are
+// even meaningful, let alone correct, to call. Conversely a D=3 tree's z can
+// be genuinely nonzero, so calling planar operators there would silently
+// compute the wrong field rather than merely waste the memory/compute the
+// planar reduction would have saved. --compress remains a real choice, but
+// only for D=3, where positions are general and the compressed operators'
+// harmonicity-based reduction (not a positional one) still applies.
 template <int D>
 int run(const Args &args) {
   const size_t Nparticles = args.Nparticles;
@@ -131,9 +142,14 @@ int run(const Args &args) {
   std::cout << "-----------------------" << std::endl;
   std::cout << "Dimension  = " << D << (D == 2 ? " (planar)" : "") << std::endl;
   std::cout << "Nparticles = " << Nparticles << std::endl;
-  fmm_select(args.compressed_set ? args.compressed != 0 : false);
-  std::cout << "operators  = " << fmm->name
-            << (fmm_have_compressed() ? "" : " (compressed set not generated)") << std::endl;
+  if constexpr (D == 2) {
+    fmm_select(FMMVariantKind::Planar);
+  } else {
+    fmm_select((args.compressed_set && args.compressed != 0)
+                   ? FMMVariantKind::Compressed
+                   : FMMVariantKind::Full);
+  }
+  std::cout << "operators  = " << fmm->name << std::endl;
   std::cout << "ncrit      = " << ncrit << std::endl;
   std::cout << "theta      = " << theta << std::endl;
   std::cout << "FMMGEN_MINORDER = " << FMMGEN_MINORDER << std::endl;
@@ -290,8 +306,8 @@ int main(int argc, const char **argv) {
   args::ValueFlag<size_t> nc(parser, "ncrit", "The maximum number of particles in a cell", {"n", "ncrit"});
   args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"T", "type"});
   args::ValueFlag<std::string> filelabel(parser, "label", "Label for the output files", {"l", "label"});
-  args::ValueFlag<int> compressed(parser, "compress", "Use harmonic-compressed operators (0/1)", {"c", "compress"});
-  args::ValueFlag<size_t> dim(parser, "dim", "Spatial dimension of particle positions: 2 (planar, z=0) or 3 (default)", {"D", "dim"});
+  args::ValueFlag<int> compressed(parser, "compress", "Use harmonic-compressed operators (0/1). D=3 only: a D=2 run always uses the planar operators.", {"c", "compress"});
+  args::ValueFlag<size_t> dim(parser, "dim", "Spatial dimension of particle positions: 2 (planar, z=0, always uses the planar operators) or 3 (default; --compress selects between full and harmonic-compressed)", {"D", "dim"});
 
   try
   {
