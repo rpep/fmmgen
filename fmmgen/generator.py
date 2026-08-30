@@ -488,3 +488,206 @@ def generate_M2L_compressed(order, symbols, M_dict, L_dict, keep_M, keep_L,
             derivs.append(Phi_derivatives(n, symbols))
 
     return derivs, L_ops
+
+
+# --------------------------------------------------------------------------
+# Planar (2D-plane) operator variants
+#
+# Sources (and, for the local array, evaluation points) confined to z = 0,
+# with moment VECTORS that remain full 3D -- e.g. an atomistic magnetic
+# dipole in a monolayer still has a (mux, muy, muz) moment even though its
+# position has no z. This is a positional degeneracy, not a change of PDE:
+# the kernel is still 1/R, not the 2D Laplace log(r) kernel that would apply
+# if sources were translationally invariant along z instead.
+#
+# Every inter-cell and cell-to-particle displacement is a difference of two
+# z=0 coordinates, hence identically zero, so z (equivalently every
+# translation symbol -- expansions.py always calls it z regardless of its
+# physical role as a source-to-centre, cell-to-cell or centre-to-target
+# vector) can be set to 0 in each already-built uncompressed operator before
+# printing. Differentiation w.r.t. z, where it happens (M2P, P2P's own
+# internal use of sp.diff), always happens before this substitution is
+# applied, since it acts on the functions' *return values*.
+#
+# The multipole array's retained set is n_z <= source_order: a source's own
+# moment shell (|n| = source_order) is the only place z-content can enter --
+# M_shift's recursion only ever reads an input coefficient at the SAME n_z it
+# writes, because every displacement power is dz**k with dz = 0, killing
+# every k >= 1 -- so n_z can never exceed what the shell itself started with.
+# This is verified by direct construction in tests/test_planar.py, not just
+# asserted here.
+#
+# The local array's retained set is n_z <= 1 if the field is wanted, else
+# n_z <= 0: L2P only ever reads L at n_z = 0 for the potential/Fx/Fy (the
+# evaluation point's z-offset is 0, killing any n_z >= 1 term) and at n_z = 1
+# for Fz (one extra z-derivative before evaluating at dz = 0). This is a
+# property of what L2P asks for, independent of source_order -- unlike the
+# multipole array, more distant sources never change what a local expansion
+# needs to have been evaluated to.
+#
+# Excluded multipole entries are PROVABLY ZERO (not, as in the harmonic case,
+# expressible as a linear combination of retained ones), and excluded local
+# entries are simply never read by a correctly z=0-evaluating pipeline. So
+# unlike the compressed variants, planar needs only two of harmonic.py's four
+# mechanical transforms: lift_multipole_subs (zero-fill an excluded input
+# slot) and restrict_local (take the retained subset of an output list). It
+# never needs project_multipole or expand_local_subs, which exist specifically
+# to reconstruct excluded entries that are NOT zero.
+# --------------------------------------------------------------------------
+
+def _planar_keep(order, symbols, source_order, max_nz):
+    """Retained indices {n : |n| <= order, n_z <= max_nz}, contiguously
+    reindexed in the same relative order as generate_mappings.
+
+    Deliberately independent of fmmgen.harmonic.keep_mappings, which fixes
+    max_nz = 1 unconditionally (the trace-free relation does not depend on
+    source_order). Here max_nz is source_order for the multipole array, or
+    0/1 for the local array depending on whether the field is wanted -- see
+    the module-level note above.
+    """
+    if order < 0:
+        return {}
+    full, _ = generate_mappings(order, symbols, source_order=source_order)
+    kept = [n for n in full if n[2] <= max_nz]
+    return {n: i for i, n in enumerate(kept)}
+
+
+def Nterms_planar(order, max_nz):
+    """Closed-form count of |_planar_keep(order, symbols, 0, max_nz)|: the
+    number of 3-variable monomials with total degree <= order and z-degree
+    <= max_nz. For fixed n_z = j, the (n_x, n_y) pairs range over total
+    degree <= order - j, a plane count of (order-j+1)(order-j+2)/2.
+
+    >>> [Nterms_planar(p, p) for p in range(4)]  # max_nz >= order: no restriction
+    [1, 4, 10, 20]
+    >>> [Nterms_planar(p, 1) for p in range(1, 4)]
+    [4, 9, 16]
+    """
+    if order < 0:
+        return 0
+    max_nz = min(max_nz, order)
+    return sum((order - j + 1) * (order - j + 2) // 2 for j in range(max_nz + 1))
+
+
+def Nterms_planar_M(order, source_order):
+    """Closed-form count of |_planar_keep(order, symbols, source_order,
+    max_nz=source_order)|: the planar multipole array's retained size,
+    {n : source_order <= |n| <= order, n_z <= source_order}.
+
+    Nterms_planar (no lower bound) is not this function with an extra term
+    subtracted off -- the multipole array's own lower bound (a source has no
+    multipole below its own order) interacts with the n_z <= source_order
+    cutoff, since a fixed n_z = j shell's (n_x, n_y) pairs must range over
+    source_order - j <= n_x + n_y <= order - j, not 0 <= n_x + n_y <= order - j.
+    Both endpoints are pinned by the same source_order, so this needed its
+    own derivation rather than reusing Nterms_planar with a subtraction.
+
+    >>> [Nterms_planar_M(p, 1) for p in range(1, 5)]  # matches len(_planar_keep(p, symbols, 1, 1))
+    [3, 8, 15, 24]
+    """
+    if order < source_order:
+        return 0
+    s = source_order
+
+    def tri(k):
+        return (k + 1) * (k + 2) // 2 if k >= 0 else 0
+
+    return sum(tri(order - j) - tri(s - j - 1) for j in range(s + 1))
+
+
+def _keep_sets_planar(order, symbols, source_order, field=True):
+    """Retained index sets for the planar multipole and local arrays.
+
+    Mirrors _keep_sets' asymmetry (the multipole spans s <= |n| <= p while
+    the local spans |m| <= p - s) but with planar's own, source_order- and
+    field-dependent cutoffs rather than harmonic's fixed n_z <= 1.
+    """
+    keep_M = _planar_keep(order, symbols, source_order, max_nz=source_order)
+    keep_L = _planar_keep(order - source_order, symbols, 0, max_nz=1 if field else 0)
+    return keep_M, keep_L
+
+
+def generate_S2M_operators_planar(order, symbols, M_dict, keep_M, source_order=0, ops=None):
+    if ops is None:
+        ops = generate_S2M_operators(order, symbols, M_dict, source_order=source_order)
+    z = symbols[2]
+    ops = [expr.xreplace({z: 0}) for expr in ops]
+    return restrict_local(ops, M_dict, keep_M)
+
+
+def generate_M_shift_operators_planar(order, symbols, M_dict, keep_M, source_order=0, ops=None):
+    if ops is None:
+        ops = generate_M_shift_operators(order, symbols, M_dict, source_order=source_order)
+    z = symbols[2]
+    ops = [expr.xreplace({z: 0}) for expr in ops]
+    subs = lift_multipole_subs("M", Nterms(order), len(keep_M), M_dict, keep_M)
+    ops = [expr.xreplace(subs) for expr in ops]
+    return restrict_local(ops, M_dict, keep_M)
+
+
+def generate_L_operators_planar(order, symbols, M_dict, L_dict, keep_M, keep_L,
+                                source_order=0, ops=None):
+    # generate_L_operators (eval_derivs=False) is a pure M[...]*D[...]
+    # contraction with no x, y, z in it -- the z=0 effect for M2L lives
+    # entirely in the derivative array, handled by generate_M2L_planar.
+    if ops is None:
+        ops = generate_L_operators(order, symbols, M_dict, L_dict, source_order=source_order)
+    subs = lift_multipole_subs("M", Nterms(order), len(keep_M), M_dict, keep_M)
+    ops = [expr.xreplace(subs) for expr in ops]
+    return restrict_local(ops, L_dict, keep_L)
+
+
+def generate_L_shift_operators_planar(order, symbols, L_dict, keep_L, source_order=0, ops=None):
+    if ops is None:
+        ops = generate_L_shift_operators(order, symbols, L_dict, source_order=source_order)
+    z = symbols[2]
+    ops = [expr.xreplace({z: 0}) for expr in ops]
+    subs = lift_multipole_subs("L", Nterms(order), len(keep_L), L_dict, keep_L)
+    ops = [expr.xreplace(subs) for expr in ops]
+    return restrict_local(ops, L_dict, keep_L)
+
+
+def generate_L2P_operators_planar(order, symbols, L_dict, keep_L, potential=True,
+                                  field=True, ops=None):
+    if ops is None:
+        ops = generate_L2P_operators(order, symbols, L_dict, potential=potential, field=field)
+    z = symbols[2]
+    ops = [expr.xreplace({z: 0}) for expr in ops]
+    subs = lift_multipole_subs("L", Nterms(order), len(keep_L), L_dict, keep_L)
+    return [expr.xreplace(subs) for expr in ops]
+
+
+def generate_M2P_operators_planar(
+    order, symbols, M_dict, keep_M, potential=True, field=True,
+    source_order=0, harmonic_derivs=False, ops=None,
+):
+    if ops is None:
+        ops = generate_M2P_operators(
+            order, symbols, M_dict, potential=potential, field=field,
+            source_order=source_order, harmonic_derivs=harmonic_derivs,
+        )
+    z = symbols[2]
+    ops = [expr.xreplace({z: 0}) for expr in ops]
+    subs = lift_multipole_subs("M", Nterms(order), len(keep_M), M_dict, keep_M)
+    return [expr.xreplace(subs) for expr in ops]
+
+
+def generate_M2L_planar(order, symbols, M_dict, L_dict, keep_M, keep_L,
+                        source_order=0, harmonic_derivs=False, ops=None):
+    """
+    Planar M2L, returning (derivs, L_operators).
+
+    Unlike generate_M2L_compressed, the derivative array is NOT reindexed
+    down to only-referenced entries here -- it stays Nterms(order) wide, each
+    entry z=0-substituted (many becoming literally 0, left for CSE/the
+    printer to fold away rather than physically dropped from the array).
+    Reindexing is a legitimate follow-up (see generator.py's module notes)
+    but not needed for a first, correct implementation.
+    """
+    z = symbols[2]
+    derivs = generate_derivs(order, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs)
+    derivs = [d.xreplace({z: 0}) for d in derivs]
+    L_ops = generate_L_operators_planar(
+        order, symbols, M_dict, L_dict, keep_M, keep_L, source_order=source_order, ops=ops
+    )
+    return derivs, L_ops
