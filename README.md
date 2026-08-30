@@ -5,28 +5,48 @@
 [![Arxiv Paper](https://img.shields.io/badge/arxiv-2005.12351-B31B1B)](https://arxiv.org/abs/2005.12351)
 [![.github/workflows/actions.yml](https://github.com/rpep/fmmgen/actions/workflows/actions.yml/badge.svg)](https://github.com/rpep/fmmgen/actions/workflows/actions.yml)
 
-This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
-It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
+Hand-deriving Cartesian multipole operators for a Fast Multipole or Barnes-Hut code is
+tractable up to about 3rd order for simple monopole sources, and a serious undertaking
+beyond that - the algebra gets markedly worse again if your sources are dipoles,
+quadrupoles, or higher, which is why most Cartesian FMM/Barnes-Hut implementations
+you'll find are stuck at low order and monopole sources only. fmmgen does the derivation
+symbolically with SymPy, to whatever expansion order and source order you ask for, and
+emits optimized C, C++, or CUDA code for the result: common-subexpression elimination,
+exploitation of the Laplace Green's function's harmonicity, and an optional trace-free
+("harmonic compression") basis all reduce the operator's operation count before it ever
+reaches your compiler.
 
-The library is written in Python, and requires at least version 3.12. The package has few dependencies; the main one is the SymPy library. fmmgen is licensed under the MIT License.
+Generating the operators is only half the problem, so fmmgen also ships a complete,
+OpenMP-parallelised reference implementation of both the FMM and Barnes-Hut tree and
+traversal in the `example` folder, built around the generated operators, that you can
+drop straight into your own code rather than writing a tree code from scratch.
 
-fmmgen consists of several parts:
+fmmgen was written as part of the PhD research of Ryan Alexander Pepper at the University
+of Southampton, and is described in the accompanying paper (see [References](#references)
+below). fmmgen is licensed under the MIT License.
 
-1) Symbolical algebraic generation of the operators for fast multipole and Barnes-Hut codes in Cartesian Coordinates. Hand implementation of multipole formulae up to an arbitrary expansion order is non-trivial, and beyond 3rd order is a substantial effort. In general, this leaves most Cartesian fast multipole and Barnes-Hut authors writing operator functions by hand, as can be seen from other similar packages.
+## Features
 
-2) A code writer, which generates code from the expansion formulae. At present,
-this generates C or C++ code but in future may be extended. The code makes use of something called 'common subexpression
-elimination' (CSE) which reduces the number of operations which are performed in
-the compiled code. Compilers already offer this functionality, but only at
-higher levels of compiler optimisation is it turned on. Other optimisations are also present.
-
-The code writer can also output a Cython wrapper for this C or C++ code, which can be
-used for quick testing of the operators.
-
+- **Arbitrary expansion order and source order.** Ask for order-10 quadrupole operators
+  as easily as order-2 monopole ones; fmmgen derives the formulae symbolically rather
+  than relying on a table of hand-worked cases.
+- **Optimized code generation, not just correct code.** Common-subexpression elimination,
+  exploitation of the Laplace Green's function's harmonicity, and an optional trace-free
+  ("harmonic compression") basis all cut the operation count of the generated operators,
+  particularly for the M2L operator at high order.
+- **C, C++, or CUDA output**, plus an optional Cython wrapper so you can call the
+  generated operators directly from Python while prototyping.
+- **A ready-to-use tree code.** The `example` folder contains a complete,
+  OpenMP-parallelised FMM and Barnes-Hut implementation built on the generated
+  operators, covering monopole, dipole, and quadrupole sources out of the box.
+- **Peer-reviewed.** fmmgen is described in an accompanying paper (see
+  [References](#references)), and has been cited in published work using it for
+  large-scale polarizable force fields.
 
 ## Installation
 
-To try out the module, first install it and the requirements:
+fmmgen requires Python 3.12+ and has few dependencies, the main one being SymPy. To try
+it out, install it and its requirements:
 
 ```bash
 git clone https://github.com/rpep/fmmgen.git
@@ -36,7 +56,8 @@ pip install .
 
 ### Development
 
-The project uses [uv](https://docs.astral.sh/uv/) for dependency management. To set up a development environment and run the test suite:
+The project uses [uv](https://docs.astral.sh/uv/) for dependency management. To set up a
+development environment and run the test suite:
 
 ```bash
 uv sync --all-groups
@@ -46,7 +67,24 @@ uv run ruff check fmmgen tests
 
 ## Example
 
-Once the package is installed, you can get started in using it to generate a C code version of the operators:
+Generating operators is a single function call. Here's the minimum needed to get
+order-10 potential operators for monopole sources, as C code with a Cython wrapper you
+can call straight from Python:
+
+```python
+import fmmgen
+
+fmmgen.generate_code(order=10, module_name="operators", source_order=0,
+                     potential=True, field=False, cython=True)
+```
+
+`generate_code` has a lot of other knobs (precision, language, CSE, harmonic
+compression, GPU output, and so on) for tuning accuracy and performance; the full set
+is documented below, along with how to load and call the generated operators from
+Python.
+
+<details>
+<summary>Full example: every <code>generate_code</code> option, and calling the result from Python</summary>
 
 ```python
 import fmmgen
@@ -153,21 +191,33 @@ print(M)
 #
 ```
 
-We suggest looking in the 'example' folder for a fully functioning OpenMP parallelised implementation of the FMM and Barnes-Hut methods using the code generated operators, which works for Coulomb, Dipole and higher order sources; all that needs to be done is change the 'source_order' parameter. By making other changes in the example.py file, one can enable or disable optimisations, which affects the run time significantly for some compilers.
+</details>
 
-In general, we do not recommend the use of the GNU compiler for this; in testing we find that the performance of the methods are significantly worse than when compiled with the Intel compiler. This has a side effect; we find that the symbolic algebra optimisations have less of an effect on the performance with the Intel compiler, which can factor expressions more effectively to avoid repeated computations than the GNU compiler at high optimisation levels.
+We suggest looking in the `example` folder for a fully functioning OpenMP-parallelised
+implementation of the FMM and Barnes-Hut methods using the code generated operators,
+which works for Coulomb, dipole, and higher order sources; all that needs to be done is
+change the `source_order` parameter. By making other changes in the `example.py` file,
+one can enable or disable optimisations, which affects the run time significantly for
+some compilers.
+
+In general, we do not recommend the use of the GNU compiler for this; in testing we find
+that the performance of the methods is significantly worse than when compiled with the
+Intel compiler. This has a side effect: we find that the symbolic algebra optimisations
+have less of an effect on performance with the Intel compiler, which can factor
+expressions more effectively to avoid repeated computations than the GNU compiler at
+high optimisation levels.
 
 ## References
 
 The code was developed with particular reference to the following academic papers.
 
-[1] Visscher, P. B., & Apalkov, D. M. (2010). Simple recursive implementation of fast multipole method. Journal of Magnetism and Magnetic Materials, 322(2), 275–281. https://doi.org/10.1016/j.jmmm.2009.09.033
+[1] Visscher, P. B., & Apalkov, D. M. (2010). Simple recursive implementation of fast multipole method. Journal of Magnetism and Magnetic Materials, 322(2), 275-281. https://doi.org/10.1016/j.jmmm.2009.09.033
 
 [2] Coles, J. P., & Masella, M. (2015). The fast multipole method and point dipole moment polarizable force fields. The Journal of Chemical Physics, 142(2), 24109. https://doi.org/10.1063/1.4904922
 
 [3] Beatson, R. and Greengard, L. (1997) A short course on fast multipole methods. In "Wavelets, Multilevel Methods and Elliptic PDEs", Oxford University Press, ISBN 0 19 850190 0
 
-[4] Coles, J. P., & Bieri, F. (2020). An optimizing symbolic algebra approach for generating fast multipole method operators. Computer Physics Communications, 251, 107081. https://doi.org/10.1016/j.cpc.2019.107081 (arXiv:1811.06332) -- the `compress` option is fmmgen's implementation of the traceless/trace-free Cartesian tensor reduction discussed here.
+[4] Coles, J. P., & Bieri, F. (2020). An optimizing symbolic algebra approach for generating fast multipole method operators. Computer Physics Communications, 251, 107081. https://doi.org/10.1016/j.cpc.2019.107081 (arXiv:1811.06332) - the `compress` option is fmmgen's implementation of the traceless/trace-free Cartesian tensor reduction discussed here.
 
 In addition, I would also point anyone interested in the Fast Multipole Method to the [video tutorial series](https://www.youtube.com/playlist?list=PLpa6_YduENMF080NikNninGG-7e1hK1eQ) of Dr. Rio Yokota of the Tokyo Institute of Technology for an overview and short course developing the 2-D method in a step-by-step way.
 
@@ -177,4 +227,4 @@ I would also like to thank J. P. Coles for useful discussions regarding the meth
 
 The following papers have cited or used Fmmgen:
 
-[1] [Efficient Open-Source Implementations of Linear-Scaling Polarizable Embedding: Use Octrees to Save the Trees](https://doi.org/10.1021/acs.jctc.1c00225) M. Scheurer, P. Reinholdt, J. M. H. Olsen, A. Dreuw, J Kongsted, J. Chem. Theory Comput. 17, 6, 3445–3454 (2021)
+[1] [Efficient Open-Source Implementations of Linear-Scaling Polarizable Embedding: Use Octrees to Save the Trees](https://doi.org/10.1021/acs.jctc.1c00225) M. Scheurer, P. Reinholdt, J. M. H. Olsen, A. Dreuw, J Kongsted, J. Chem. Theory Comput. 17, 6, 3445-3454 (2021)
