@@ -10,18 +10,14 @@ jobs:
         python-version: [ '3.12', '3.13', '3.14', '3.15' ]
     name: Python ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-          architecture: x64
-          allow-prereleases: true
-      - name: Install poetry
-        run: pip install poetry
       - name: Install package and dependencies
-        run: poetry config virtualenvs.create false && poetry install
+        run: uv sync --all-groups
       - name: Tests
-        run: poetry run pytest tests
-      - name: Black
-        run: poetry run flake8 fmmgen tests
+        run: uv run pytest tests
+      - name: Flake8
+        run: uv run flake8 fmmgen tests
