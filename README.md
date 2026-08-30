@@ -5,6 +5,12 @@
 [![Arxiv Paper](https://img.shields.io/badge/arxiv-2005.12351-B31B1B)](https://arxiv.org/abs/2005.12351)
 [![.github/workflows/actions.yml](https://github.com/rpep/fmmgen/actions/workflows/actions.yml/badge.svg)](https://github.com/rpep/fmmgen/actions/workflows/actions.yml)
 
+<p align="center">
+  <img src="assets/quadtree_2d.png" width="60%" alt="Adaptive quadtree over a clustered 2D particle distribution">
+</p>
+<p align="center"><sub>An adaptive quadtree built from a clustered particle distribution, the kind fmmgen's
+generated operators and example tree code operate on.</sub></p>
+
 Hand-deriving Cartesian multipole operators for a Fast Multipole or Barnes-Hut code is
 tractable up to about 3rd order for simple monopole sources, and a serious undertaking
 beyond that - the algebra gets markedly worse again if your sources are dipoles,
