@@ -27,3 +27,4 @@ operators.c
 *_wrap.cpp
 *.s
 *.pyc
+junit/

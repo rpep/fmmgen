@@ -2,25 +2,50 @@ on:
   pull_request:
   push:
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: [ '3.10', '3.11' ]
+        python-version: [ '3.12', '3.13', '3.14', '3.15' ]
     name: Python ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-          architecture: x64
-      - name: Install poetry
-        run: pip install poetry
       - name: Install package and dependencies
-        run: poetry config virtualenvs.create false && poetry install
+        run: uv sync --all-groups
       - name: Tests
-        run: poetry run pytest tests
-      - name: Black
-        run: poetry run flake8 fmmgen tests
+        run: uv run pytest tests --junitxml=junit/results.xml
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Python ${{ matrix.python-version }} test results
+          path: junit/results.xml
+          reporter: java-junit
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - name: Install package and dependencies
+        run: uv sync --all-groups
+      - name: Install reviewdog
+        uses: reviewdog/action-setup@v1
+      - name: Flake8
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run flake8 fmmgen tests | reviewdog -f=flake8 -name=flake8 -reporter=github-check -filter-mode=nofilter -fail-level=any

@@ -1,16 +1,35 @@
 from sympy.printing.c import C99CodePrinter as C99Base
 from sympy.printing.cxx import CXX11CodePrinter as CXX11Base
 import logging
+import re
 import sympy as sp
-from sympy import Mul, S, Pow
-from fmmgen.cse import cse
+from sympy import cse
 from fmmgen.opts import basic as opts
 from sympy import count_ops
-from sympy.printing.precedence import precedence
-from sympy.core.mul import _keep_coeff
 
 
 logger = logging.getLogger(name="fmmgen")
+
+
+def integral_exponent(e):
+    """Return int(e) if e is an integer-valued real number, else None.
+
+    Phi_derivatives builds R as (dx**2 + dy**2 + dz**2)**(0.5) using a Python
+    float, so every exponent in the derived expressions is a sympy Float rather
+    than an Integer, and Float(3.0).is_integer is False. Testing is_integer
+    directly therefore disabled the pow -> multiplication replacement below
+    entirely: minpow silently did nothing and 167 pow() calls survived in the
+    generated operators, two of them per P2P call.
+
+    Note the caller needs a genuine Python int, since it indexes range().
+    """
+    if e.is_Integer:
+        return int(e)
+    if e.is_Number and e.is_real and not e.is_infinite:
+        f = float(e)
+        if f == int(f):
+            return int(f)
+    return None
 
 
 class CCodePrinter(C99Base):
@@ -20,80 +39,18 @@ class CCodePrinter(C99Base):
 
     def _print_Pow(self, expr):
         if self.minpow:
-            if expr.exp.is_integer and expr.exp > 0 and expr.exp <= self.minpow:
-                return "(" + "*".join([self._print(expr.base) for i in range(expr.exp)]) + ")"
+            n = integral_exponent(expr.exp)
+            if n is not None and 0 < n <= self.minpow:
+                base = self._print(expr.base)
+                return "(" + "*".join([base] * n) + ")"
 
-            elif expr.exp.is_integer and expr.exp < 0 and expr.exp >= -self.minpow:
-                expr = "(1 / (" + "*".join([self._print(expr.base) for i in range(abs(expr.exp))]) + "))"
-                return expr
+            elif n is not None and -self.minpow <= n < 0:
+                base = self._print(expr.base)
+                return "(1 / (" + "*".join([base] * abs(n)) + "))"
             else:
                 return super()._print_Pow(expr)
         else:
             return super()._print_Pow(expr)
-
-    def _print_Mul(self, expr):
-        prec = precedence(expr)
-        c, e = expr.as_coeff_Mul()
-
-        if c == 1.0:
-            expr = e
-            sign = ""
-        elif e == 1.0:
-            expr = c
-            sign = ""
-
-        elif c < 0:
-            if c == -1.0:
-                expr = e
-                sign = "-"
-            elif e == -1.0:
-                expr = c
-                sign = "-"
-            else:
-                expr = _keep_coeff(-c, e)
-                sign = "-"
-        else:
-            sign = ""
-
-        a = []  # items in the numerator
-        b = []  # items that are in the denominator (if any)
-
-        pow_paren = []  # Will collect all pow with more than one base element and exp = -1
-
-        if self.order not in ("old", "none"):
-            args = expr.as_ordered_factors()
-        else:
-            # use make_args in case expr was something like -x -> x
-            args = Mul.make_args(expr)
-
-        # Gather args for numerator/denominator
-        for item in args:
-            if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
-                if item.exp != -1:
-                    b.append(Pow(item.base, -item.exp, evaluate=False))
-                else:
-                    if len(item.args[0].args) != 1 and isinstance(item.base, Mul):  # To avoid situations like #14160
-                        pow_paren.append(item)
-                    b.append(Pow(item.base, -item.exp))
-            else:
-                a.append(item)
-
-        a = a or [S.One]
-
-        a_str = [self.parenthesize(x, prec) for x in a]
-        b_str = [self.parenthesize(x, prec) for x in b]
-
-        # To parenthesize Pow with exp = -1 and having more than one Symbol
-        for item in pow_paren:
-            if item.base in b:
-                b_str[b.index(item.base)] = "(%s)" % b_str[b.index(item.base)]
-
-        if not b:
-            return sign + "*".join(a_str)
-        elif len(b) == 1:
-            return sign + "*".join(a_str) + "/" + b_str[0]
-        else:
-            return sign + "*".join(a_str) + "/(%s)" % "*".join(b_str)
 
 
 class CXXCodePrinter(CXX11Base):
@@ -103,71 +60,18 @@ class CXXCodePrinter(CXX11Base):
 
     def _print_Pow(self, expr):
         if self.minpow:
-            if expr.exp.is_integer and expr.exp > 0 and expr.exp <= self.minpow:
-                return "(" + "*".join([self._print(expr.base) for i in range(expr.exp)]) + ")"
+            n = integral_exponent(expr.exp)
+            if n is not None and 0 < n <= self.minpow:
+                base = self._print(expr.base)
+                return "(" + "*".join([base] * n) + ")"
 
-            elif expr.exp.is_integer and expr.exp < 0 and expr.exp >= -self.minpow:
-                expr = "(1 / (" + "*".join([self._print(expr.base) for i in range(abs(expr.exp))]) + "))"
-                return expr
+            elif n is not None and -self.minpow <= n < 0:
+                base = self._print(expr.base)
+                return "(1 / (" + "*".join([base] * abs(n)) + "))"
             else:
                 return super()._print_Pow(expr)
         else:
             return super()._print_Pow(expr)
-
-    def _print_Mul(self, expr):
-        prec = precedence(expr)
-        c, e = expr.as_coeff_Mul()
-
-        if c == 1.0:
-            return str(e)
-        elif e == 1.0:
-            return str(c)
-
-        if c < 0:
-            expr = _keep_coeff(-c, e)
-            sign = "-"
-        else:
-            sign = ""
-
-        a = []  # items in the numerator
-        b = []  # items that are in the denominator (if any)
-
-        pow_paren = []  # Will collect all pow with more than one base element and exp = -1
-
-        if self.order not in ("old", "none"):
-            args = expr.as_ordered_factors()
-        else:
-            # use make_args in case expr was something like -x -> x
-            args = Mul.make_args(expr)
-
-        # Gather args for numerator/denominator
-        for item in args:
-            if item.is_commutative and item.is_Pow and item.exp.is_Rational and item.exp.is_negative:
-                if item.exp != -1:
-                    b.append(Pow(item.base, -item.exp, evaluate=False))
-                else:
-                    if len(item.args[0].args) != 1 and isinstance(item.base, Mul):  # To avoid situations like #14160
-                        pow_paren.append(item)
-                    b.append(Pow(item.base, -item.exp))
-            else:
-                a.append(item)
-
-        a = a or [S.One]
-
-        a_str = [self.parenthesize(x, prec) for x in a]
-        b_str = [self.parenthesize(x, prec) for x in b]
-
-        # To parenthesize Pow with exp = -1 and having more than one Symbol
-        for item in pow_paren:
-            if item.base in b:
-                b_str[b.index(item.base)] = "(%s)" % b_str[b.index(item.base)]
-
-        if not b:
-            return sign + "*".join(a_str)
-        elif len(b) == 1:
-            return sign + "*".join(a_str) + "/" + b_str[0]
-        else:
-            return sign + "*".join(a_str) + "/(%s)" % "*".join(b_str)
 
 
 language_mapping = {
@@ -227,18 +131,28 @@ class FunctionPrinter:
         opscount = 0
         code = ""
 
-        # Testing on Godbolt with GCC 9.1 and ICPC shows that
-        # pow(x, 0.5) generates fewer instructions than
-        # sqrt(x), so will swap. However, leave R here in case
-        # it gets used in expansions in future for some reason.
+        # Rinv is emitted as 1.0/sqrt(...) rather than pow(..., -0.5).
+        #
+        # An earlier note here read: "Testing on Godbolt with GCC 9.1 and ICPC
+        # shows that pow(x, 0.5) generates fewer instructions than sqrt(x), so
+        # will swap." That is misleading: instruction count at the call site is
+        # not cost, because a libm call is one instruction that dispatches to
+        # hundreds. Checked again with -O3:
+        #
+        #   g++-15  : pow(x,-0.5) emits a real libm call;
+        #             1.0/sqrt(x) emits hardware fsqrt, no call.
+        #   clang++ : both forms fold to hardware fsqrt.
+        #
+        # So the explicit form is a large win on GCC and a no-op on clang, i.e.
+        # it cannot regress. Measured 2.5-2.9x on the P2P operator, which is
+        # dominated by this single expression. ICPC not retested.
+        #
+        # R is left as sqrt() in case it gets used in expansions in future.
 
-        light_ignore = []
         if sp.symbols("R") in matrix.free_symbols:
             code += f"{self.precision} R = sqrt(x*x + y*y + z*z);\n"
-            light_ignore.append("R")
         if sp.symbols("Rinv") in matrix.free_symbols:
-            code += f"{self.precision} Rinv = pow(x*x + y*y + z*z, -0.5);\n"
-            light_ignore.append("Rinv")
+            code += f"{self.precision} Rinv = 1.0 / sqrt(x*x + y*y + z*z);\n"
 
         if allocate:
             code += f"{self.precision} {name}[{len(matrix)}];\n"
@@ -247,12 +161,25 @@ class FunctionPrinter:
             # print('Printing with CSE')
             iterator = SymbolIterator(name)
             # print(f'ignoring {name} in cse')
+            # Stock sympy.cse. fmmgen previously vendored a patched copy of
+            # sympy's tree_cse/cse (fmmgen/cse.py) to add `ignore` and
+            # `light_ignore` filtering, but neither was doing anything:
+            #
+            #  - inserting the light_ignore loop between the `ignore` loop and
+            #    its `for...else` detached them, so breaking out of the
+            #    `ignore` loop no longer skipped elimination;
+            #  - `light_ignore` compared against whole expressions, but bare
+            #    Symbols return early as atoms, so it never matched. Its only
+            #    effect was a debug print on every subexpression.
+            #
+            # Verified byte-identical generated output across p = 1..11 with
+            # stock cse and no ignore arguments, so the vendored copy and both
+            # parameters were removed. This also drops a dependency on sympy
+            # internals (opt_cse, preprocess_for_cse, Unevaluated, ...).
             sub_expressions, rmatrix = cse(
                 matrix,
                 optimizations=opts,
                 symbols=iterator,
-                ignore=(ignore_symbols),
-                light_ignore=light_ignore,
             )
 
             rmatrix = sp.Matrix(rmatrix)
@@ -311,6 +238,59 @@ class FunctionPrinter:
             return "__device__ void {}({})".format(name, combined_inputs)
         else:
             return "void {}({})".format(name, combined_inputs)
+
+    def generate_batch(self, name, LHS, RHS, symbols, source_size):
+        """Emit a batched kernel: one target against a contiguous run of sources.
+
+        The ordinary `generate` emits a function handling a single interaction.
+        That function lives in the generated translation unit while the caller
+        lives in another, so every interaction costs a real call -- and a call
+        in the innermost loop makes vectorisation impossible in principle.
+        Inspecting the object code confirmed it: zero vector instructions in
+        the P2P loop and three un-inlined call sites.
+
+        This emits the same expression inside a `#pragma omp simd` reduction
+        loop over sources, with source coordinates taken from SoA arrays so the
+        loads are unit-stride. The expression itself is untouched, so the kernel
+        stays general over source order instead of being hand-specialised for
+        the Coulomb monopole.
+        """
+        n_out = len(RHS)
+        acc = ["{}acc{}".format(LHS.lower(), i) for i in range(n_out)]
+        pr = self.precision
+
+        args = ", ".join(
+            ["{} t{}".format(pr, d) for d in symbols]
+            + ["const {} * s{}".format(pr, d) for d in symbols]
+            + ["const {} * S".format(pr), "size_t begin", "size_t end",
+               "{} * {}".format(pr, LHS)]
+        )
+        header = "void {}({})".format(name, args)
+
+        body, opscount = self._array(LHS, RHS, operator="+=", atomic=False)
+
+        # Retarget the emitted body into the loop:
+        #   S[k]    -> S[source_size*u + k]  (this source's moments)
+        #   F[k] += -> facck +=              (private reduction accumulator)
+        body = re.sub(
+            r"\bS\[(\d+)\]",
+            lambda m: "S[{}*u + {}]".format(source_size, m.group(1)),
+            body,
+        )
+        for i in range(n_out):
+            body = body.replace("{}[{}] +=".format(LHS, i), "{} +=".format(acc[i]))
+
+        lines = [header + " {"]
+        lines += ["{} {} = 0.0;".format(pr, a) for a in acc]
+        lines.append("#pragma omp simd reduction(+:" + ",".join(acc) + ")")
+        lines.append("for (size_t u = begin; u < end; u++) {")
+        lines += ["{} {} = t{} - s{}[u];".format(pr, d, d, d) for d in symbols]
+        lines.append(body.rstrip())
+        lines.append("}")
+        lines += ["{}[{}] += {};".format(LHS, i, a) for i, a in enumerate(acc)]
+        lines.append("}")
+
+        return header + ";\n", "\n".join(lines) + "\n", opscount
 
     def generate(self, name, LHS, RHS, inputs, operator="=", atomic=False, internal=[], ignore=[]):
         header = self._generate_header(name, LHS, RHS, inputs)

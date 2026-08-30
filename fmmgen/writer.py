@@ -9,9 +9,11 @@ import sympy as sp
 from fmmgen.printers import FunctionPrinter
 from fmmgen.utils import Nterms
 import textwrap
+from fmmgen.harmonic import Nkeep
 from fmmgen.generator import (
+    _keep_sets,
     generate_mappings,
-    generate_M_operators,
+    generate_S2M_operators,
     generate_M_shift_operators,
     generate_L_operators,
     generate_L_shift_operators,
@@ -19,6 +21,12 @@ from fmmgen.generator import (
     generate_M2P_operators,
     generate_P2P_operators,
     generate_derivs,
+    generate_S2M_operators_compressed,
+    generate_M_shift_operators_compressed,
+    generate_L_shift_operators_compressed,
+    generate_L2P_operators_compressed,
+    generate_M2P_operators_compressed,
+    generate_M2L_compressed,
 )
 
 import logging
@@ -37,6 +45,7 @@ def generate_code(
     cython=False,
     CSE=False,
     harmonic_derivs=False,
+    compress=False,
     include_dir=None,
     src_dir=None,
     potential=True,
@@ -75,6 +84,34 @@ def generate_code(
         2p - 1 independent derivatives. Enabling this option therefore computes
         some derivatives as combinations of others.
 
+    compress, bool:
+        Store multipole and local expansions in the trace-free basis, which has
+        (p+1)^2 coefficients rather than Nterms(p) = C(p+3,3). See
+        fmmgen.harmonic. This shrinks M2L from C(p+6,6) multiplies to
+        sum_{a+b<=p} (2a+1)(2b+1) -- measured 1.85x at p=5 and 2.61x at p=8 in
+        wall clock on the kernel.
+
+        Orthogonal to harmonic_derivs, which cheapens the derivative array
+        instead; all four combinations are valid.
+
+        The compressed operators are emitted ALONGSIDE the uncompressed ones in
+        the same files, under a 'c' suffix -- M2Lc_5 beside M2L_5, and wrappers
+        M2Lc(...) beside M2L(...). One header, one set of FMMGEN_* defines, so
+        a caller can hold both and choose at runtime. P2P is not duplicated, as
+        it never touches an expansion. The header additionally gains
+        FMMGEN_COMPRESSED and FMMGEN_MULTIPOLESIZE/FMMGEN_LOCALSIZE, since the
+        compressed arrays are (p+1)^2 rather than Nterms(order).
+
+        With compress=False nothing above is altered, so the output is
+        byte-identical to that of a build without this option.
+
+        Supports source_order 0 and 1. The multipole and local arrays then have
+        different retained sets -- s <= |n| <= p against |m| <= p - s -- which
+        is handled, but at source_order >= 2 the source shell itself compresses
+        (a quadrupole's 6 monomials to 5 retained, since the trace of a
+        quadrupole moment contributes nothing to a Laplace field) and S2M would
+        have to project the caller's moment array. Rejected rather than guessed.
+
     source_order, int:
         If source_order > 0 then we set certain multipole terms to zero
         in the local expansion, and hence they are not used. This is useful if,
@@ -104,6 +141,16 @@ def generate_code(
     logger.info(f"Generating FMM operators to order {order}")
     assert precision in ["double", "float"], "Precision must be float or double"
     logger.info(f"Precision = {precision}")
+
+    if compress and source_order > 1:
+        raise NotImplementedError(
+            "compress=True supports source_order 0 or 1; got "
+            f"{source_order}. At degree >= 2 the source shell itself compresses "
+            "(6 monomials -> 5 retained), so S2M would have to project the "
+            "caller's moment array. See fmmgen.generator."
+        )
+    if compress:
+        logger.info("Harmonic compression enabled")
     if CSE:
         logger.info("CSE Enabled")
         p = FunctionPrinter(precision=precision, debug=False, minpow=minpow)
@@ -116,7 +163,6 @@ def generate_code(
 
     x, y, z, q = sp.symbols("x y z q")
     symbols = (x, y, z)
-    coords = [x, y, z]
 
     start = source_order
     if field:
@@ -144,12 +190,20 @@ def generate_code(
         M_dict, _ = generate_mappings(i, symbols, "grevlex", source_order=source_order)
         L_dict, _ = generate_mappings(i - source_order, symbols, "grevlex", source_order=0)
 
-        M = sp.Matrix(generate_M_operators(i, symbols, M_dict))
+        source_size = Nterms(source_order) - Nterms(source_order - 1)
+        S2M = sp.Matrix(generate_S2M_operators(i, symbols, M_dict, source_order=source_order))
 
-        head, code, P2M_opscount = p.generate(f"P2M_{i}", "M", M, coords + [q], operator="+=")
-        print(f"P2M_{i} opscount = {P2M_opscount}")
+        head, code, S2M_opscount = p.generate(
+            f"S2M_{i}",
+            "M",
+            S2M,
+            list(symbols) + [sp.MatrixSymbol("S", source_size, 1)],
+            operator="+=",
+            atomic=atomic,
+        )
+        print(f"S2M_{i} opscount = {S2M_opscount}")
         header += head
-        body += code
+        body += code + "\n"
         Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
 
         head, code, M2M_opscount = p.generate(
@@ -230,6 +284,82 @@ def generate_code(
         header += head
         body += code + "\n"
         print(f"M2P_{i} opscount = {M2P_opscount}")
+
+        # Compressed variant, emitted ALONGSIDE the above rather than instead
+        # of it. One header, one set of FMMGEN_* defines, nothing to include
+        # twice and no redefinition to manage -- and every line above is left
+        # untouched, so compress=False is byte-identical by construction rather
+        # than by inspection.
+        #
+        # P2P is deliberately not duplicated: it never touches an expansion, so
+        # the two variants would emit identical arithmetic.
+        #
+        # The uncompressed operator lists built above are handed straight in
+        # rather than rebuilt: compression is a linear map applied to them, so
+        # regenerating from sympy a second time is pure waste. Substitution
+        # uses xreplace, not subs -- these are exact atom-for-atom maps and
+        # need none of subs' pattern matching.
+        if compress:
+            # Separate retained sets: the multipole spans s <= |n| <= i while
+            # the local spans |m| <= i - s, so these are different index sets
+            # of different sizes whenever source_order > 0.
+            keep_M, keep_L, dec_M, dec_L = _keep_sets(i, symbols, M_dict, L_dict, source_order)
+            Mc = sp.MatrixSymbol("M", len(keep_M), 1)
+            Lc = sp.MatrixSymbol("L", len(keep_L), 1)
+
+            for nm, lhs, ops, inputs in (
+                ("S2Mc", "M",
+                 generate_S2M_operators_compressed(i, symbols, M_dict, keep_M,
+                                                   source_order=source_order, dec_M=dec_M,
+                                                   ops=list(S2M)),
+                 list(symbols) + [sp.MatrixSymbol("S", source_size, 1)]),
+                ("M2Mc", "Ms",
+                 generate_M_shift_operators_compressed(i, symbols, M_dict, keep_M,
+                                                       source_order=source_order, dec_M=dec_M,
+                                                       ops=list(Ms)),
+                 list(symbols) + [Mc]),
+                ("L2Lc", "Ls",
+                 generate_L_shift_operators_compressed(i, symbols, L_dict, keep_L,
+                                                       source_order=source_order, dec_L=dec_L,
+                                                       ops=list(Ls)),
+                 list(symbols) + [Lc]),
+                ("L2Pc", "F",
+                 generate_L2P_operators_compressed(i, symbols, L_dict, keep_L,
+                                                   potential=potential, field=field, dec_L=dec_L,
+                                                   ops=list(L2P)),
+                 list(symbols) + [Lc]),
+                ("M2Pc", "F",
+                 generate_M2P_operators_compressed(i, symbols, M_dict, keep_M,
+                                                   potential=potential, field=field,
+                                                   source_order=source_order,
+                                                   harmonic_derivs=harmonic_derivs,
+                                                   ops=list(M2P)),
+                 list(symbols) + [Mc]),
+            ):
+                head, code, n = p.generate(
+                    f"{nm}_{i}", lhs, sp.Matrix(ops), inputs,
+                    operator="+=", atomic=atomic,
+                )
+                header += head
+                body += code + "\n"
+                print(f"{nm}_{i} opscount = {n}")
+
+            # M2L returns its derivative array too: the compressed contraction
+            # only reaches derivatives with third index <= 2, so D is reindexed
+            # onto just those rather than emitted in full.
+            dv, L_ops = generate_M2L_compressed(
+                i, symbols, M_dict, L_dict, keep_M, keep_L,
+                source_order=source_order, harmonic_derivs=harmonic_derivs,
+                ops=list(L),
+            )
+            head, code, n = p.generate(
+                f"M2Lc_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mc],
+                operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
+            )
+            header += head
+            body += code + "\n"
+            print(f"M2Lc_{i} opscount = {n}")
+
         if i == start:
             P2P = sp.Matrix(
                 generate_P2P_operators(
@@ -253,10 +383,25 @@ def generate_code(
             header += head
             body += code + "\n"
 
+            # Batched form of the same operator: one target against a
+            # contiguous run of sources, inside an omp simd reduction loop.
+            # The per-pair P2P above cannot vectorise -- it is one call per
+            # interaction, across translation units -- and P2P is the dominant
+            # cost of the whole method at realistic particle counts.
+            head, code, _ = p.generate_batch(
+                "P2P_batch",
+                "F",
+                P2P,
+                [str(sym) for sym in symbols],
+                Nterms(source_order) - Nterms(source_order - 1),
+            )
+            header += head
+            body += code + "\n"
+
         if save_opscounts:
             if i == start:
                 f.write(f"P2P,{P2P_opscount}\n")
-            f.write(f"P2M_{i},{P2M_opscount}\n")
+            f.write(f"S2M_{i},{S2M_opscount}\n")
             f.write(f"M2M_{i},{M2M_opscount}\n")
             f.write(f"M2L_{i},{M2L_opscount}\n")
             f.write(f"L2P_{i},{L2P_opscount}\n")
@@ -315,6 +460,8 @@ def generate_code(
     else:
         f = open(f"{include_dir.rstrip('/')}/{name}.{hext}", "w")
     f.write("#pragma once\n")
+    # P2P_batch takes size_t range bounds.
+    f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
     f.write(f"#define FMMGEN_MINORDER {start}\n")
     f.write(f"#define FMMGEN_MAXORDER {order}\n")
     f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
@@ -326,6 +473,25 @@ def generate_code(
     elif field and potential:
         osize = 4
     f.write(f"#define FMMGEN_OUTPUTSIZE {osize}\n")
+    if compress:
+        # Only emitted when compressed. Uncompressed, the sizes are Nterms(order)
+        # and callers already derive them that way -- adding these defines
+        # unconditionally would change the header for existing builds, and
+        # compress=False is required to be byte-identical.
+        #
+        # Indexed by order, so entry [order] is the size at that order; entries
+        # below FMMGEN_MINORDER are present only to keep the indexing direct.
+        msizes = ", ".join(str(Nkeep(o, source_order)) for o in range(order + 1))
+        lsizes = ", ".join(str(Nkeep(o - source_order)) for o in range(order + 1))
+        f.write("#define FMMGEN_COMPRESSED 1\n")
+        f.write(
+            "/* Array sizes for the *c-suffixed* operators only. The trace-free\n"
+            "   basis drops the C(p+3,3) - (p+1)^2 redundant coefficients, so these\n"
+            "   are (p+1)^2; the unsuffixed operators still take Nterms(order).\n"
+            "   Index by order. */\n"
+        )
+        f.write(f"static const size_t FMMGEN_MULTIPOLESIZE[] = {{{msizes}}};\n")
+        f.write(f"static const size_t FMMGEN_LOCALSIZE[] = {{{lsizes}}};\n")
     f.write(header)
     f.close()
 
@@ -382,19 +548,20 @@ def generate_code(
         """
         ).format(*[name + "_decl"] * 6)
 
-        subsdict = {" *": "[:]", "void": "cpdef", "_": ""}
-
-        # Generate the actual wrapper code
+        # Underscores are stripped from the FUNCTION NAME only (so M2M_1 is
+        # exposed as M2M1, as it always has been). Applying that substitution
+        # to the whole signature, as this once did, also rewrites parameter
+        # types -- "size_t" became "sizet" and the generated .pyx would not
+        # compile as soon as any operator took one.
         for funcname in func_definitions:
-            # print(funcname)
             if not funcname:
                 continue
-            pyfuncname = funcname
-            for key, value in subsdict.items():
-                pyfuncname = pyfuncname.replace(key, value)
-            pyxcode += pyfuncname + ":\n"
+            head, argstr = funcname.split("(", 1)
+            argstr = argstr.rsplit(")", 1)[0]
+            cname = head.split()[-1]
+            pyxcode += "cpdef " + cname.replace("_", "") + "(" + argstr.replace(" *", "[:]") + "):\n"
 
-            function_name = funcname.split("(")[0].split(" ")[1]
+            function_name = cname
             args = funcname.split("(")[1][:-1].split(",")
             processed_args = []
 

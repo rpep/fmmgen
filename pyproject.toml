@@ -1,25 +1,29 @@
-[tool.poetry]
+[project]
 name = "fmmgen"
 version = "0.2.0"
 description = "Tool for generating functions to generate Cartesian multipole expansions and fast multipole and Barnes-Hut codes that use these"
-authors = ["Ryan Pepper <ryan.pepper@onyxinsight.com>"]
+authors = [{ name = "Ryan Pepper", email = "ryan.pepper@onyxinsight.com" }]
 readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.23.4,<3",
+    "sympy>=1.11.1,<2",
+    "Cython>=0.29.32",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-numpy = "^1.23.4"
-sympy = "^1.11.1"
-Cython = "^0.29.32"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.2.0"
-black = "^22.10.0"
-flake8 = "^5.0.4"
+[dependency-groups]
+dev = [
+    "pytest>=7.2.0,<8",
+    "black>=22.10.0,<23",
+    "flake8>=7.0,<8",
+    "setuptools>=68",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.black]
 line-length = 120
-target-version = ['py310']
+target-version = ['py312']
