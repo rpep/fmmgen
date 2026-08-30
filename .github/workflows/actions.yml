@@ -2,10 +2,16 @@ on:
   pull_request:
   push:
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: [ '3.12', '3.13', '3.14', '3.15' ]
     name: Python ${{ matrix.python-version }}
@@ -18,6 +24,28 @@ jobs:
       - name: Install package and dependencies
         run: uv sync --all-groups
       - name: Tests
-        run: uv run pytest tests
+        run: uv run pytest tests --junitxml=junit/results.xml
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Python ${{ matrix.python-version }} test results
+          path: junit/results.xml
+          reporter: java-junit
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.12'
+      - name: Install package and dependencies
+        run: uv sync --all-groups
+      - name: Install reviewdog
+        uses: reviewdog/action-setup@v1
       - name: Flake8
-        run: uv run flake8 fmmgen tests
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run flake8 fmmgen tests | reviewdog -f=flake8 -name=flake8 -reporter=github-check -filter-mode=nofilter -fail-level=any
