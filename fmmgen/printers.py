@@ -314,11 +314,11 @@ class FunctionPrinter:
         # AND z, so R/Rinv's definition (built from this list, see _array)
         # was always safe to hardcode as 3-wide -- the planar 2-argument
         # P2P/P2P_batch variants are the first functions without z at all.
-        coords = tuple(s for s in inputs if type(s) != sp.MatrixSymbol)
+        coords = tuple(s for s in inputs if type(s) is not sp.MatrixSymbol)
         header = self._generate_header(name, LHS, RHS, inputs)
         code = header + " {\n"
         codetext, opscount = self._generate_body(LHS, RHS, internal, operator, atomic=atomic,
-                                                  ignore=ignore, coords=coords)
+                                                 ignore=ignore, coords=coords)
         code += codetext
         code += "\n}\n"
         header += ";\n"
