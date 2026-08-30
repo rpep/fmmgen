@@ -1,5 +1,5 @@
 # fmmgen
-![Python version](https://img.shields.io/badge/Python-%3E%3D%203.10-brightgreen.svg)
+![Python version](https://img.shields.io/badge/Python-%3E%3D%203.12-brightgreen.svg)
 ![C++14 version](https://img.shields.io/badge/c%2B%2B-14-brightgreen)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3842591.svg)](https://doi.org/10.5281/zenodo.3842591)
 [![Arxiv Paper](https://img.shields.io/badge/arxiv-2005.12351-B31B1B)](https://arxiv.org/abs/2005.12351)
@@ -8,7 +8,7 @@
 This package generates Fast Multipole and Barnes-Hut operators for use in tree codes.
 It was written as part of the PhD research of Ryan Alexander Pepper at the University of Southampton.
 
-The library is written in Python, and requires at least version 3.6. The package has few dependencies; the main one is the SymPy library. Some parts of the SymPy library are bundled within fmmgen due to changes needing to be made to the underlying methods for the purposes of this code. Accordingly, fmmgen is licensed under the 3-Clause BSD License.
+The library is written in Python, and requires at least version 3.12. The package has few dependencies; the main one is the SymPy library. fmmgen is licensed under the 3-Clause BSD License.
 
 fmmgen consists of several parts:
 
@@ -32,6 +32,16 @@ To try out the module, first install it and the requirements:
 git clone https://github.com/rpep/fmmgen.git
 cd fmmgen
 pip install .
+```
+
+### Development
+
+The project uses [uv](https://docs.astral.sh/uv/) for dependency management. To set up a development environment and run the test suite:
+
+```bash
+uv sync --all-groups
+uv run pytest tests
+uv run flake8 fmmgen tests
 ```
 
 ## Example
