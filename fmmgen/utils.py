@@ -96,6 +96,19 @@ def generate_mappings(order, symbols, key="grevlex", source_order=0):
     >>> print(rmap):
     {0: (0, 0, 0), 1: (1, 0, 0), 2: (0, 1, 0), 3: (0, 0, 1)}
     """
+    # Cached on (order, symbols, key, source_order): every generator.py
+    # operator (M_shift, L, L_shift, ...) calls this once per multi-index n
+    # it emits, with the SAME order/symbols/source_order each time, so
+    # without caching the itermonomials + grevlex sort was being rebuilt from
+    # scratch O(Nterms(order)) times per operator. Safe because no caller
+    # mutates the returned dicts (verified: every dict subscript-assignment
+    # elsewhere in the package targets a locally-built dict, never the
+    # index_dict/M_dict/L_dict returned from here).
+    return _generate_mappings_cached(order, tuple(symbols), key, source_order)
+
+
+@functools.lru_cache(maxsize=None)
+def _generate_mappings_cached(order, symbols, key, source_order):
     if order < source_order:
         raise ValueError("source_order must be <= order for meaningful calculations to occur")
 
