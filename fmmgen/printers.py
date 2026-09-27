@@ -260,14 +260,17 @@ class FunctionPrinter:
 
     def _generate_header(self, name, LHS, RHS, inputs):
         logger.debug(f"Generating headerfile for LHS = {str(LHS)}")
-        # restrict (C99 keyword; C++ has no standard spelling, but every
-        # compiler that matters -- GCC, Clang, MSVC, nvcc -- accepts the
-        # `__restrict` extension in C++ mode) tells the compiler none of
-        # these array arguments ever overlap. True for every call site: the
-        # driver always passes DISTINCT cells' M/L arrays and a separate F,
-        # never the same buffer twice, so this is a free vectorisation hint
-        # rather than a behaviour change.
-        restrict = "restrict" if self.language == "c" else "__restrict"
+        # FMMGEN_RESTRICT tells the compiler none of these array arguments
+        # ever overlap. True for every call site: the driver always passes
+        # DISTINCT cells' M/L arrays and a separate F, never the same buffer
+        # twice, so this is a free vectorisation hint rather than a behaviour
+        # change. It is a macro rather than a bare keyword because the spelling
+        # depends on the compiler mode, not on the `language` option: C99 has
+        # `restrict`, C++ only the `__restrict` extension, and pre-C99 C has
+        # nothing. Generated C is routinely compiled as C++ (pyximport with
+        # CC=g++, or a C++ project including the header), so a fixed spelling
+        # breaks one of the two. The macro is defined in the generated header.
+        restrict = "FMMGEN_RESTRICT"
         ptr_type = f"{self.precision} * {restrict}"
         types = []
         for arg in map(type, inputs):
@@ -305,7 +308,7 @@ class FunctionPrinter:
         n_out = len(RHS)
         acc = ["{}acc{}".format(LHS.lower(), i) for i in range(n_out)]
         pr = self.precision
-        restrict = "restrict" if self.language == "c" else "__restrict"
+        restrict = "FMMGEN_RESTRICT"  # see _generate_header
 
         args = ", ".join(
             ["{} t{}".format(pr, d) for d in symbols]

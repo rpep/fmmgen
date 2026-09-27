@@ -47,6 +47,48 @@ logger = logging.getLogger(name="fmmgen")
 q, x, y, z, R = sp.symbols("q x y z R")
 symbols = (x, y, z)
 
+# Pointer qualifiers the printer may attach to array parameters (see
+# FunctionPrinter._generate_header). They are legal in a C/C++ declaration
+# but must not appear in a call expression, and Cython does not parse them
+# at all, so both the order-dispatch wrappers and the Cython files below work
+# from qualifier-free text. Qualifiers on parameters do not affect function
+# type compatibility (C11 6.7.6.3p15), so the Cython extern declarations may
+# omit them.
+_POINTER_QUALIFIERS = ("FMMGEN_RESTRICT", "__restrict__", "__restrict", "restrict")
+
+# Definition of the qualifier macro the printer attaches to array parameters.
+# Emitted once at the top of the generated header, so the same generated C
+# builds whether it is compiled as C99, as C++ (pyximport with CC=g++, or a
+# C++ project including the header), or by a pre-C99 compiler.
+_RESTRICT_MACRO = textwrap.dedent(
+    """\
+    #if defined(__cplusplus)
+    #  define FMMGEN_RESTRICT __restrict
+    #elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+    #  define FMMGEN_RESTRICT restrict
+    #else
+    #  define FMMGEN_RESTRICT
+    #endif
+    """
+)
+
+
+def _strip_pointer_qualifiers(decl):
+    """Return a C declaration with any restrict qualifier removed."""
+    for qual in _POINTER_QUALIFIERS:
+        decl = decl.replace(f"* {qual} ", "* ")
+    return decl
+
+
+def _parameter_names(decl):
+    """Parameter names of a C function declaration, in order.
+
+    >>> _parameter_names("void M2M_1(double x, double * restrict M, size_t n)")
+    ['x', 'M', 'n']
+    """
+    argstr = decl.split("(", 1)[1].rsplit(")", 1)[0]
+    return [arg.split()[-1].lstrip("*") for arg in argstr.split(",") if arg.strip()]
+
 
 def generate_code(
     order,
@@ -602,23 +644,22 @@ def generate_code(
     for wfunc, func in zip(wrapper_funcs, unique_funcs):
         # Add to header file
         header += wfunc + ";\n"
-        # Create a switch statement that covers all functions:
+        # Create a switch statement that covers all functions. The call in
+        # each case is rebuilt from the declaration's parameter NAMES rather
+        # than by deleting type keywords from the declaration text: the latter
+        # left any pointer qualifier behind, producing e.g.
+        # `M2M_1(x, y, z, restrict M, restrict Ms)`, which is not C.
+        base_name = func.split("(")[0].split()[-1]
+        end_string = f"_{start}"
+        assert base_name.endswith(end_string), base_name
+        stem = base_name[: -len(end_string)]
+        args = ", ".join(_parameter_names(func))
         code = wfunc + " {\n"
         code += "switch (order) {\n"
         for i in range(start, order):
             code += "  case {}:\n".format(i)
-            # print(func)
-            replaced_code = (
-                func.replace(f"_{start}", f"_{i}")
-                .replace("* ", "")
-                .replace("double ", "")
-                .replace("float ", "")
-                .replace("void ", "")
-            )
-            # print(f"replaced_code: {replaced_code}")
-            code += "    " + replaced_code + ";\n    break;\n"
+            code += f"    {stem}_{i}({args});\n    break;\n"
         code += "  }\n}\n"
-        # print(code)
         body += code
 
     if not include_dir:
@@ -628,6 +669,7 @@ def generate_code(
     f.write("#pragma once\n")
     # P2P_batch takes size_t range bounds.
     f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
+    f.write(_RESTRICT_MACRO)
     f.write(f"#define FMMGEN_MINORDER {start}\n")
     f.write(f"#define FMMGEN_MAXORDER {order}\n")
     f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
@@ -714,7 +756,8 @@ def generate_code(
             {}
         """
         )
-        f.write(pxdcode.format(name, "\n    ".join(func_definitions)))
+        cython_definitions = [_strip_pointer_qualifiers(d) for d in func_definitions]
+        f.write(pxdcode.format(name, "\n    ".join(cython_definitions)))
 
         f.close()
 
@@ -739,7 +782,7 @@ def generate_code(
         # to the whole signature, as this once did, also rewrites parameter
         # types -- "size_t" became "sizet" and the generated .pyx would not
         # compile as soon as any operator took one.
-        for funcname in func_definitions:
+        for funcname in cython_definitions:
             if not funcname:
                 continue
             head, argstr = funcname.split("(", 1)
