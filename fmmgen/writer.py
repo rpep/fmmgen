@@ -47,6 +47,48 @@ logger = logging.getLogger(name="fmmgen")
 q, x, y, z, R = sp.symbols("q x y z R")
 symbols = (x, y, z)
 
+# Pointer qualifiers the printer may attach to array parameters (see
+# FunctionPrinter._generate_header). They are legal in a C/C++ declaration
+# but must not appear in a call expression, and Cython does not parse them
+# at all, so both the order-dispatch wrappers and the Cython files below work
+# from qualifier-free text. Qualifiers on parameters do not affect function
+# type compatibility (C11 6.7.6.3p15), so the Cython extern declarations may
+# omit them.
+_POINTER_QUALIFIERS = ("FMMGEN_RESTRICT", "__restrict__", "__restrict", "restrict")
+
+# Definition of the qualifier macro the printer attaches to array parameters.
+# Emitted once at the top of the generated header, so the same generated C
+# builds whether it is compiled as C99, as C++ (pyximport with CC=g++, or a
+# C++ project including the header), or by a pre-C99 compiler.
+_RESTRICT_MACRO = textwrap.dedent(
+    """\
+    #if defined(__cplusplus)
+    #  define FMMGEN_RESTRICT __restrict
+    #elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+    #  define FMMGEN_RESTRICT restrict
+    #else
+    #  define FMMGEN_RESTRICT
+    #endif
+    """
+)
+
+
+def _strip_pointer_qualifiers(decl):
+    """Return a C declaration with any restrict qualifier removed."""
+    for qual in _POINTER_QUALIFIERS:
+        decl = decl.replace(f"* {qual} ", "* ")
+    return decl
+
+
+def _parameter_names(decl):
+    """Parameter names of a C function declaration, in order.
+
+    >>> _parameter_names("void M2M_1(double x, double * restrict M, size_t n)")
+    ['x', 'M', 'n']
+    """
+    argstr = decl.split("(", 1)[1].rsplit(")", 1)[0]
+    return [arg.split()[-1].lstrip("*") for arg in argstr.split(",") if arg.strip()]
+
 
 def generate_code(
     order,
@@ -65,6 +107,7 @@ def generate_code(
     atomic=False,
     gpu=False,
     minpow=0,
+    horner=False,
     language="c",
     save_opscounts=None,
 ):
@@ -170,6 +213,26 @@ def generate_code(
         e.g. if a sympy expression is pow(x, 2) + pow(y, 6) and minpow is 5,
         the printed version will be x*x + pow(y, 6)
 
+    horner, bool:
+        Put every array-coefficient polynomial in the displacement (S2M, M2M,
+        L2L, L2P, M2P, and the M2L derivative array D) into Horner form before
+        CSE sees it. CSE's own preprocessing (fmmgen/opts.py) misses factoring
+        these can-only-be-found-by-nesting terms: measured 20-45% fewer
+        post-CSE ops at order 7-8 on the affected arrays, for a small
+        (~1-2s/array at order 7-8) one-time generation cost.
+
+        Deliberately NOT applied to M2L's own output (the M[i]*D[j]
+        contraction): there is no coordinate polynomial left to factor once
+        the derivatives are behind the opaque D array, so sympy's horner()
+        just pays for a useless full multivariate poly conversion over every
+        M/D symbol in play -- measured 26s for a ZERO op-count change at
+        order 7. generate()'s M2L/M2Lc/M2Lxy calls pass horner=False
+        explicitly for this reason; the internal D array they compute
+        alongside their output still gets Horner-formed as usual.
+
+        With horner=False (the default) nothing above is altered, so the
+        output is byte-identical to that of a build without this option.
+
     save_opcounts, string:
         Filename to save opcounts in
     """
@@ -199,10 +262,10 @@ def generate_code(
         logger.info("Harmonic compression enabled")
     if CSE:
         logger.info("CSE Enabled")
-        p = FunctionPrinter(precision=precision, debug=False, minpow=minpow)
+        p = FunctionPrinter(language=language, precision=precision, debug=False, minpow=minpow, horner=horner)
     else:
         logger.info("CSE Disabled")
-        p = FunctionPrinter(precision=precision, debug=True, minpow=minpow)
+        p = FunctionPrinter(language=language, precision=precision, debug=True, minpow=minpow, horner=horner)
 
     header = ""
     body = ""
@@ -276,6 +339,11 @@ def generate_code(
             operator="+=",
             atomic=atomic,
             internal=[("D", derivs)],
+            # See generate_code's `horner` docstring: the M[i]*D[j]
+            # contraction has no coordinate polynomial left to factor, so
+            # Horner-forming it wastes time for no gain. D (built above,
+            # passed via `internal`) still gets Horner-formed as normal.
+            horner=False,
         )
         header += head
         body += code + "\n"
@@ -401,6 +469,7 @@ def generate_code(
             head, code, n = p.generate(
                 f"M2Lc_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mc],
                 operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
+                horner=False,
             )
             header += head
             body += code + "\n"
@@ -459,6 +528,7 @@ def generate_code(
             head, code, n = p.generate(
                 f"M2Lxy_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mxy],
                 operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
+                horner=False,
             )
             header += head
             body += code + "\n"
@@ -574,23 +644,22 @@ def generate_code(
     for wfunc, func in zip(wrapper_funcs, unique_funcs):
         # Add to header file
         header += wfunc + ";\n"
-        # Create a switch statement that covers all functions:
+        # Create a switch statement that covers all functions. The call in
+        # each case is rebuilt from the declaration's parameter NAMES rather
+        # than by deleting type keywords from the declaration text: the latter
+        # left any pointer qualifier behind, producing e.g.
+        # `M2M_1(x, y, z, restrict M, restrict Ms)`, which is not C.
+        base_name = func.split("(")[0].split()[-1]
+        end_string = f"_{start}"
+        assert base_name.endswith(end_string), base_name
+        stem = base_name[: -len(end_string)]
+        args = ", ".join(_parameter_names(func))
         code = wfunc + " {\n"
         code += "switch (order) {\n"
         for i in range(start, order):
             code += "  case {}:\n".format(i)
-            # print(func)
-            replaced_code = (
-                func.replace(f"_{start}", f"_{i}")
-                .replace("* ", "")
-                .replace("double ", "")
-                .replace("float ", "")
-                .replace("void ", "")
-            )
-            # print(f"replaced_code: {replaced_code}")
-            code += "    " + replaced_code + ";\n    break;\n"
+            code += f"    {stem}_{i}({args});\n    break;\n"
         code += "  }\n}\n"
-        # print(code)
         body += code
 
     if not include_dir:
@@ -600,6 +669,7 @@ def generate_code(
     f.write("#pragma once\n")
     # P2P_batch takes size_t range bounds.
     f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
+    f.write(_RESTRICT_MACRO)
     f.write(f"#define FMMGEN_MINORDER {start}\n")
     f.write(f"#define FMMGEN_MAXORDER {order}\n")
     f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
@@ -686,7 +756,8 @@ def generate_code(
             {}
         """
         )
-        f.write(pxdcode.format(name, "\n    ".join(func_definitions)))
+        cython_definitions = [_strip_pointer_qualifiers(d) for d in func_definitions]
+        f.write(pxdcode.format(name, "\n    ".join(cython_definitions)))
 
         f.close()
 
@@ -711,7 +782,7 @@ def generate_code(
         # to the whole signature, as this once did, also rewrites parameter
         # types -- "size_t" became "sizet" and the generated .pyx would not
         # compile as soon as any operator took one.
-        for funcname in func_definitions:
+        for funcname in cython_definitions:
             if not funcname:
                 continue
             head, argstr = funcname.split("(", 1)

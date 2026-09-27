@@ -82,7 +82,11 @@ def generate_S2M_operators(order, symbols, M_dict, source_order=0):
         # its index doubles as the index into the caller's S array
         subs[M[M_dict[n]]] = S[M_dict[n]]
 
-    return [M_shift(n, order, symbols, M_dict, source_order=source_order).subs(subs)
+    # xreplace, not subs: `subs` is an exact atom-for-atom map (MatrixElement
+    # -> MatrixElement or 0), with none of subs' pattern-matching or assumption
+    # re-derivation needed, and subs was the dominant cost of code generation
+    # at higher orders (profiled: ~50s of an 85s order-9 run).
+    return [M_shift(n, order, symbols, M_dict, source_order=source_order).xreplace(subs)
             for n in M_dict]
 
 
