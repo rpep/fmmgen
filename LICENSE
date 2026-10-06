@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---------------------------------------------------------------------------
-example/args.hxx https://github.com/Taywee/args
+examples/args.hxx https://github.com/Taywee/args
 
 Copyright (c) 2016-2017 Taylor C. Richberger <taywee@gmx.com> and Pavel
 Belikov
