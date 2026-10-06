@@ -10,6 +10,8 @@
 #include <iomanip>
 #include <iostream>
 #include <random>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "args.hxx"
@@ -114,7 +116,21 @@ struct Args {
   int compressed;
   std::string filelabel;
   bool have_filelabel;
+  std::string input;   //!< Optional particle file to read instead of generating particles.
+  bool have_input;
 };
+
+// Number of non-empty lines in a particle file: one particle per line.
+static size_t count_particles(const std::string &path) {
+  std::ifstream in(path);
+  if (!in) throw std::runtime_error("cannot open input file " + path);
+  size_t n = 0;
+  std::string line;
+  while (std::getline(in, line)) {
+    if (line.find_first_not_of(" \t\r,") != std::string::npos) n++;
+  }
+  return n;
+}
 
 // D=2 generates particles confined to the z=0 plane (a "planar" tree, see
 // tree.hpp) with positions stored 2-wide; D=3 is the ordinary octree case
@@ -133,7 +149,7 @@ struct Args {
 // harmonicity-based reduction (not a positional one) still applies.
 template <int D>
 int run(const Args &args) {
-  const size_t Nparticles = args.Nparticles;
+  const size_t Nparticles = args.have_input ? count_particles(args.input) : args.Nparticles;
   const size_t ncrit = args.ncrit;
   const double theta = args.theta;
   const size_t type = args.type;
@@ -142,6 +158,9 @@ int run(const Args &args) {
   std::cout << "-----------------------" << std::endl;
   std::cout << "Dimension  = " << D << (D == 2 ? " (planar)" : "") << std::endl;
   std::cout << "Nparticles = " << Nparticles << std::endl;
+  if (args.have_input) {
+    std::cout << "input      = " << args.input << std::endl;
+  }
   if constexpr (D == 2) {
     fmm_select(FMMVariantKind::Planar);
   } else {
@@ -176,21 +195,45 @@ int run(const Args &args) {
   // fixed-3-wide array would.
   double *r = new double[D*Nparticles];
   double *S = new double[FMMGEN_SOURCESIZE*Nparticles];
-  auto filename = "particles_n_" + std::to_string(Nparticles) + ".txt";
-  std::ofstream fout;
-  fout.open(filename);
-  for (size_t i = 0; i < Nparticles; i++) {
-    for(int j = 0; j < D; j++) {
-      r[D*i+j] = distribution(generator) * 1e-9;
-      fout << r[D*i+j] << ",";
+  if (args.have_input) {
+    // One particle per line, comma separated: D positions then
+    // FMMGEN_SOURCESIZE strengths -- the format written below, so a file from
+    // either this program or the Fortran example can be read back. The input
+    // is not rewritten, so it is safe to point at particles_n_<N>.txt.
+    std::ifstream in(args.input);
+    std::string line;
+    size_t i = 0;
+    while (std::getline(in, line)) {
+      if (line.find_first_not_of(" \t\r,") == std::string::npos) continue;
+      for (char &c : line) if (c == ',') c = ' ';
+      std::istringstream ss(line);
+      for (int j = 0; j < D; j++) {
+        if (!(ss >> r[D*i+j])) throw std::runtime_error("bad particle line " + std::to_string(i + 1));
+      }
+      for (int j = 0; j < FMMGEN_SOURCESIZE; j++) {
+        if (!(ss >> S[FMMGEN_SOURCESIZE*i + j])) throw std::runtime_error("bad particle line " + std::to_string(i + 1));
+      }
+      i++;
     }
-    for(int j = 0; j < FMMGEN_SOURCESIZE; j++) {
-      S[FMMGEN_SOURCESIZE*i + j] = distribution(generator);
-      fout << S[FMMGEN_SOURCESIZE*i + j] << ",";
+  } else {
+    auto filename = "particles_n_" + std::to_string(Nparticles) + ".txt";
+    std::ofstream fout;
+    fout.open(filename);
+    // Full precision, so the file reproduces the particles exactly.
+    fout << std::setprecision(17);
+    for (size_t i = 0; i < Nparticles; i++) {
+      for(int j = 0; j < D; j++) {
+        r[D*i+j] = distribution(generator) * 1e-9;
+        fout << r[D*i+j] << ",";
+      }
+      for(int j = 0; j < FMMGEN_SOURCESIZE; j++) {
+        S[FMMGEN_SOURCESIZE*i + j] = distribution(generator);
+        fout << S[FMMGEN_SOURCESIZE*i + j] << ",";
+      }
+      fout << std::endl;
     }
-    fout << std::endl;
+    fout.close();
   }
-  fout.close();
 
 
   double t_direct;
@@ -249,12 +292,13 @@ int run(const Args &args) {
     // If direct calculation is enabled, check the error:
     if (!args.nodirect) {
         std::ofstream errout(errs_filename);
+        errout << std::scientific << std::setprecision(15);
 
         double errs[FMMGEN_OUTPUTSIZE] = {0.0};
         for (size_t i = 0; i < Nparticles; i++) {
             for(int k = 0; k < FMMGEN_OUTPUTSIZE; k++) {
               double err = (F_exact[FMMGEN_OUTPUTSIZE * i + k] - F_approx[FMMGEN_OUTPUTSIZE * i + k]) / F_exact[FMMGEN_OUTPUTSIZE * i + k];
-              fout << err << ",";
+              errout << err << ",";
               errs[k] += std::abs(err);
           }
           errout << std::endl;
@@ -307,6 +351,7 @@ int main(int argc, const char **argv) {
   args::ValueFlag<size_t> typ(parser, "type", "Type of field evaluation - 0 for FMM and 1 for Barnes-Hut", {"T", "type"});
   args::ValueFlag<std::string> filelabel(parser, "label", "Label for the output files", {"l", "label"});
   args::ValueFlag<int> compressed(parser, "compress", "Use harmonic-compressed operators (0/1). D=3 only: a D=2 run always uses the planar operators.", {"c", "compress"});
+  args::ValueFlag<std::string> input(parser, "input", "Read particles from this file (one per line: positions then strengths, comma separated) instead of generating them", {"input"});
   args::ValueFlag<size_t> dim(parser, "dim", "Spatial dimension of particle positions: 2 (planar, z=0, always uses the planar operators) or 3 (default; --compress selects between full and harmonic-compressed)", {"D", "dim"});
 
   try
@@ -340,6 +385,8 @@ int main(int argc, const char **argv) {
   args_.compressed = compressed ? args::get(compressed) : 0;
   args_.have_filelabel = (bool)filelabel;
   args_.filelabel = filelabel ? args::get(filelabel) : "";
+  args_.have_input = (bool)input;
+  args_.input = input ? args::get(input) : "";
 
   if (args_.type > 1) {
     throw std::runtime_error("Type must be either 0 (Fast Multipole) or 1 (Barnes-Hut)");
