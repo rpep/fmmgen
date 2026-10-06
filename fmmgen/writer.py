@@ -195,6 +195,15 @@ def generate_code(
         and this is therefore the name of the Python module which must be
         imported if using pyximport.
 
+    language, str:
+        'c' (default), 'c++' or 'fortran'. Fortran output is one free-form
+        Fortran 90 module, <name>.f90, with every routine using `implicit none`
+        and the FMMGEN_* constants as module parameters instead of macros.
+        Arrays are 1-based assumed-size, P2P_batch takes inclusive 1-based
+        source bounds, and the order-dispatch wrappers `stop` on an order
+        that was not generated. cython, atomic, gpu and precision='float' are
+        not supported with it; compress and planar are.
+
     cython_wrapper, bool:
         Enable generation of a Cython wrapper for the C files.
 

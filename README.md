@@ -17,7 +17,7 @@ beyond that - the algebra gets markedly worse again if your sources are dipoles,
 quadrupoles, or higher, which is why most Cartesian FMM/Barnes-Hut implementations
 you'll find are stuck at low order and monopole sources only. fmmgen does the derivation
 symbolically with SymPy, to whatever expansion order and source order you ask for, and
-emits optimized C, C++, or CUDA code for the result: common-subexpression elimination,
+emits optimized C, C++, Fortran 90, or CUDA code for the result: common-subexpression elimination,
 exploitation of the Laplace Green's function's harmonicity, and an optional trace-free
 ("harmonic compression") basis all reduce the operator's operation count before it ever
 reaches your compiler.
@@ -40,11 +40,14 @@ below). fmmgen is licensed under the MIT License.
   exploitation of the Laplace Green's function's harmonicity, and an optional trace-free
   ("harmonic compression") basis all cut the operation count of the generated operators,
   particularly for the M2L operator at high order.
-- **C, C++, or CUDA output**, plus an optional Cython wrapper so you can call the
-  generated operators directly from Python while prototyping.
+- **C, C++, Fortran 90, or CUDA output**, plus an optional Cython wrapper (C/C++) so you can
+  call the generated operators directly from Python while prototyping. Fortran output is a
+  single free-form F90 module with `implicit none`, and supports everything except
+  `cython`, `atomic`, `gpu` and single precision.
 - **A ready-to-use tree code.** The `examples` folder contains a complete,
   OpenMP-parallelised FMM and Barnes-Hut implementation built on the generated
-  operators, covering monopole, dipole, and quadrupole sources out of the box.
+  operators, covering monopole, dipole, and quadrupole sources out of the box, in C++ and
+  in Fortran 90 (`examples/fortran`, which gives the same results as the C++ version).
 - **Peer-reviewed.** fmmgen is described in an accompanying paper (see
   [References](#references)), and has been cited in published work using it for
   large-scale polarizable force fields.
@@ -112,7 +115,8 @@ module_name = "operators"
 potential = True
 field = False
 
-# Choose a language ('c' or 'c++')
+# Choose a language ('c', 'c++' or 'fortran'). 'fortran' writes <name>.f90, a Fortran 90
+# module, and does not support cython, atomic, gpu or precision='float'.
 language = 'c'
 
 # Choose the floating point precision of the generated code ('double' or 'float')
