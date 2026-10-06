@@ -60,7 +60,7 @@ void fmm_select(FMMVariantKind kind) {
 #else
       throw std::runtime_error(
           "compressed operators were not generated: set compress=True in "
-          "example/example.py and regenerate");
+          "examples/example.py and regenerate");
 #endif
     case FMMVariantKind::Planar:
 #ifdef FMMGEN_PLANAR
@@ -69,7 +69,7 @@ void fmm_select(FMMVariantKind kind) {
 #else
       throw std::runtime_error(
           "planar operators were not generated: set planar=True in "
-          "example/example.py and regenerate");
+          "examples/example.py and regenerate");
 #endif
   }
 }

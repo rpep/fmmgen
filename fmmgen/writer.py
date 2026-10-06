@@ -90,6 +90,75 @@ def _parameter_names(decl):
     return [arg.split()[-1].lstrip("*") for arg in argstr.split(",") if arg.strip()]
 
 
+def _write_fortran(p, body, name, order, start, source_order, potential, field, compress, planar, out_dir):
+    """Write {name}.f90: one module holding every operator and its wrappers.
+
+    Free-form Fortran 90, `implicit none` throughout. The FMMGEN_* constants
+    are module parameters rather than preprocessor defines, so no cpp pass is
+    needed. Wrappers mirror the C ones: M2M(..., order) selects M2M_<order>.
+    """
+    osize = 1 if (potential and not field) else 3 if (field and not potential) else 4
+    source_size = Nterms(source_order) - Nterms(source_order - 1)
+
+    out = [f"module {name}", "  implicit none", "  private", "  integer, parameter, public :: wp = kind(1.0d0)"]
+    out += [
+        f"  integer, parameter, public :: FMMGEN_MINORDER = {start}",
+        f"  integer, parameter, public :: FMMGEN_MAXORDER = {order}",
+        f"  integer, parameter, public :: FMMGEN_SOURCEORDER = {source_order}",
+        f"  integer, parameter, public :: FMMGEN_SOURCESIZE = {source_size}",
+        f"  integer, parameter, public :: FMMGEN_OUTPUTSIZE = {osize}",
+    ]
+
+    # Size tables, indexed by order 0..order as in the C header. The flags are
+    # always present so a driver can test them; a driver that calls the c/xy
+    # operators needs them generated.
+    def table(name_, values):
+        return (f"  integer, parameter, public :: {name_}(0:{order}) = (/ "
+                + ", ".join(str(v) for v in values) + " /)")
+
+    out.append(f"  logical, parameter, public :: FMMGEN_COMPRESSED = {'.true.' if compress else '.false.'}")
+    out.append(f"  logical, parameter, public :: FMMGEN_PLANAR = {'.true.' if planar else '.false.'}")
+    if compress:
+        out.append(table("FMMGEN_MULTIPOLESIZE", [Nkeep(o, source_order) for o in range(order + 1)]))
+        out.append(table("FMMGEN_LOCALSIZE", [Nkeep(o - source_order) for o in range(order + 1)]))
+    if planar:
+        out.append(table("FMMGEN_PLANAR_MULTIPOLESIZE",
+                         [Nterms_planar_M(o, source_order) for o in range(order + 1)]))
+        out.append(table("FMMGEN_PLANAR_LOCALSIZE",
+                         [Nterms_planar(o - source_order, 1 if field else 0) for o in range(order + 1)]))
+
+    suffix = f"_{start}"
+    stems = [n[: -len(suffix)] for n in p.signatures if n.endswith(suffix)]
+    public = list(stems) + [n for n in p.signatures if not n.endswith(suffix) and not n[-1].isdigit()]
+    public = list(dict.fromkeys(public))
+    for k in range(0, len(public), 8):
+        out.append("  public :: " + ", ".join(public[k:k + 8]))
+    out.append("contains")
+    out.append("")
+    out.append(body)
+
+    for stem in stems:
+        args = p.signatures[stem + suffix] + [("order", "int")]
+        names = ", ".join(n for n, _ in args)
+        call_args = ", ".join(n for n, _ in args[:-1])
+        out.append(f"subroutine {stem}({names})")
+        out += ["  " + d for d in p._fortran_declarations(args)]
+        out.append("  select case (order)")
+        for i in range(start, order):
+            out.append(f"  case ({i})")
+            out.append(f"    call {stem}_{i}({call_args})")
+        out.append("  case default")
+        out.append(f"    stop 'fmmgen: {stem} called with an order that was not generated'")
+        out.append("  end select")
+        out.append(f"end subroutine {stem}")
+        out.append("")
+
+    out.append(f"end module {name}")
+    path = f"{out_dir.rstrip('/')}/{name}.f90" if out_dir else f"{name}.f90"
+    with open(path, "w") as f:
+        f.write("\n".join(out) + "\n")
+
+
 def generate_code(
     order,
     name,
@@ -125,6 +194,15 @@ def generate_code(
         We therefore append "wrap" to the end of the name for the cython file,
         and this is therefore the name of the Python module which must be
         imported if using pyximport.
+
+    language, str:
+        'c' (default), 'c++' or 'fortran'. Fortran output is one free-form
+        Fortran 90 module, <name>.f90, with every routine using `implicit none`
+        and the FMMGEN_* constants as module parameters instead of macros.
+        Arrays are 1-based assumed-size, P2P_batch takes inclusive 1-based
+        source bounds, and the order-dispatch wrappers `stop` on an order
+        that was not generated. cython, atomic, gpu and precision='float' are
+        not supported with it; compress and planar are.
 
     cython_wrapper, bool:
         Enable generation of a Cython wrapper for the C files.
@@ -239,7 +317,14 @@ def generate_code(
     if save_opscounts:
         f = open(save_opscounts, "w")
 
-    assert language in ["c", "c++"], "Language must be 'c' or 'c++'"
+    assert language in ["c", "c++", "fortran"], "Language must be 'c', 'c++' or 'fortran'"
+    if language == "fortran":
+        unsupported = {"cython": cython, "atomic": atomic, "gpu": gpu}
+        bad = [k for k, v in unsupported.items() if v]
+        if bad:
+            raise NotImplementedError(f"language='fortran' does not support: {', '.join(bad)}")
+        fext = "f90"
+        hext = None
     if language == "c":
         fext = "c"
         hext = "h"
@@ -615,6 +700,11 @@ def generate_code(
             f.write(f"L2P_{i},{L2P_opscount}\n")
             f.write(f"L2L_{i},{L2L_opscount}\n")
             f.write(f"M2P_{i},{M2P_opscount}\n")
+
+    if language == "fortran":
+        _write_fortran(p, body, name, order, start, source_order, potential, field,
+                       compress, planar, src_dir or include_dir)
+        return
 
     # We now generate wrapper functions that cover all orders generated.
     unique_funcs = []

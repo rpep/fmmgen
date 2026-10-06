@@ -17,14 +17,14 @@ beyond that - the algebra gets markedly worse again if your sources are dipoles,
 quadrupoles, or higher, which is why most Cartesian FMM/Barnes-Hut implementations
 you'll find are stuck at low order and monopole sources only. fmmgen does the derivation
 symbolically with SymPy, to whatever expansion order and source order you ask for, and
-emits optimized C, C++, or CUDA code for the result: common-subexpression elimination,
+emits optimized C, C++, Fortran 90, or CUDA code for the result: common-subexpression elimination,
 exploitation of the Laplace Green's function's harmonicity, and an optional trace-free
 ("harmonic compression") basis all reduce the operator's operation count before it ever
 reaches your compiler.
 
 Generating the operators is only half the problem, so fmmgen also ships a complete,
 OpenMP-parallelised reference implementation of both the FMM and Barnes-Hut tree and
-traversal in the `example` folder, built around the generated operators, that you can
+traversal in the `examples` folder, built around the generated operators, that you can
 drop straight into your own code rather than writing a tree code from scratch.
 
 fmmgen was originally written as part of the PhD research of Ryan Alexander Pepper at the University
@@ -40,11 +40,14 @@ below). fmmgen is licensed under the MIT License.
   exploitation of the Laplace Green's function's harmonicity, and an optional trace-free
   ("harmonic compression") basis all cut the operation count of the generated operators,
   particularly for the M2L operator at high order.
-- **C, C++, or CUDA output**, plus an optional Cython wrapper so you can call the
-  generated operators directly from Python while prototyping.
-- **A ready-to-use tree code.** The `example` folder contains a complete,
+- **C, C++, Fortran 90, or CUDA output**, plus an optional Cython wrapper (C/C++) so you can
+  call the generated operators directly from Python while prototyping. Fortran output is a
+  single free-form F90 module with `implicit none`, and supports everything except
+  `cython`, `atomic`, `gpu` and single precision.
+- **A ready-to-use tree code.** The `examples` folder contains a complete,
   OpenMP-parallelised FMM and Barnes-Hut implementation built on the generated
-  operators, covering monopole, dipole, and quadrupole sources out of the box.
+  operators, covering monopole, dipole, and quadrupole sources out of the box, in C++ and
+  in Fortran 90 (`examples/fortran`, which gives the same results as the C++ version).
 - **Peer-reviewed.** fmmgen is described in an accompanying paper (see
   [References](#references)), and has been cited in published work using it for
   large-scale polarizable force fields.
@@ -112,7 +115,8 @@ module_name = "operators"
 potential = True
 field = False
 
-# Choose a language ('c' or 'c++')
+# Choose a language ('c', 'c++' or 'fortran'). 'fortran' writes <name>.f90, a Fortran 90
+# module, and does not support cython, atomic, gpu or precision='float'.
 language = 'c'
 
 # Choose the floating point precision of the generated code ('double' or 'float')
@@ -199,12 +203,13 @@ print(M)
 
 </details>
 
-We suggest looking in the `example` folder for a fully functioning OpenMP-parallelised
+We suggest looking in the `examples` folder for a fully functioning OpenMP-parallelised
 implementation of the FMM and Barnes-Hut methods using the code generated operators,
 which works for Coulomb, dipole, and higher order sources; all that needs to be done is
 change the `source_order` parameter. By making other changes in the `example.py` file,
 one can enable or disable optimisations, which affects the run time significantly for
-some compilers.
+some compilers. `examples/fortran` holds the same example in Fortran 90, which uses
+`language='fortran'` to generate its operators.
 
 In general, we do not recommend the use of the GNU compiler for this; in testing we find
 that the performance of the methods is significantly worse than when compiled with the

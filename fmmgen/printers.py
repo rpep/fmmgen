@@ -1,5 +1,6 @@
 from sympy.printing.c import C99CodePrinter as C99Base
 from sympy.printing.cxx import CXX11CodePrinter as CXX11Base
+from sympy.printing.fortran import FCodePrinter as FBase
 import logging
 import re
 import sympy as sp
@@ -75,9 +76,123 @@ class CXXCodePrinter(CXX11Base):
             return super()._print_Pow(expr)
 
 
+class FortranCodePrinter(FBase):
+    """Free-form Fortran 90 expression printer.
+
+    Differences from stock sympy that matter here:
+
+    - Array elements print as a single 1-based index, `M(4)`, not `M(4, 1)`:
+      every generated array is a flat vector that the driver addresses
+      through assumed-size dummies.
+    - Line wrapping is left to FortranStatementWriter, which has to count
+      continuation lines (Fortran 90 allows only 39 of them).
+    - Floats are `d0` literals, so this printer is double precision only.
+    """
+
+    def __init__(self, settings=None, minpow=False):
+        settings = dict(settings or {})
+        settings.setdefault("source_format", "free")
+        settings.setdefault("standard", 90)
+        super().__init__(settings)
+        self.minpow = minpow
+        # Hook for P2P_batch: S(k) there is the k-th moment of the u-th source,
+        # which lives at S(source_size*(u-1) + k).
+        self.moment_stride = None
+
+    def _print_Integer(self, expr):
+        # Coefficients reach 1e11 at order 12, past default-integer range
+        # (Fortran rejects the literal; C silently promotes it). Real
+        # literals everywhere also rule out integer division.
+        return f"{int(expr)}.0d0"
+
+    def _print_MatrixElement(self, expr):
+        name = self._print(expr.parent)
+        rows, cols = expr.parent.shape
+        assert cols == 1, "generated arrays are column vectors"
+        i = int(expr.i)
+        if self.moment_stride is not None and name == "S":
+            return f"S({self.moment_stride}*(u-1)+{i + 1})"
+        return f"{name}({i + 1})"
+
+    def _print_Pow(self, expr):
+        if self.minpow:
+            n = integral_exponent(expr.exp)
+            if n is not None and 0 < n <= self.minpow:
+                base = self._print(expr.base)
+                return "(" + "*".join([base] * n) + ")"
+            elif n is not None and -self.minpow <= n < 0:
+                base = self._print(expr.base)
+                return "(1.0d0/(" + "*".join([base] * abs(n)) + "))"
+        # Phi_derivatives builds exponents as Python floats (see
+        # integral_exponent), which would print as `x**3.0d0`, a pow() call.
+        # An integer exponent lets the compiler expand it to multiplications.
+        n = integral_exponent(expr.exp)
+        if n is not None and n != 0:
+            return f"{self.parenthesize(expr.base, 1000)}**({n})"
+        return super()._print_Pow(expr)
+
+
+class FortranStatementWriter:
+    """Turns `target = target + expr` into wrapped free-form Fortran lines.
+
+    A long Add is split into several statements, each at most `max_chars`
+    printed characters, rather than one statement with hundreds of
+    continuation lines: Fortran 90 allows 39 and Fortran 2003 255, and a
+    compiler that enforces either limit would otherwise reject the P2P and
+    M2L bodies at high order.
+    """
+
+    LINE = 90
+
+    def __init__(self, printer, max_chars=2400):
+        self.printer = printer
+        self.max_chars = max_chars
+
+    def _wrap(self, text, indent="  "):
+        # Spaces only ever separate tokens in sympy's output, so breaking at
+        # one can never split a literal such as 1.0d-9.
+        out = []
+        cur = indent
+        for piece in text.split(" "):
+            if len(cur) + len(piece) + 1 > self.LINE and cur.strip():
+                out.append(cur.rstrip() + " &")
+                cur = indent + "    "
+            cur += piece + " "
+        out.append(cur.rstrip())
+        return "\n".join(out)
+
+    def assign(self, target, expr, operator="="):
+        """Statements for `target op expr`; operator is "=" or "+=" ."""
+        terms = list(expr.args) if expr.is_Add else [expr]
+        chunks, cur, size = [], [], 0
+        for t in terms:
+            n = len(self.printer.doprint(t))
+            if cur and size + n > self.max_chars:
+                chunks.append(cur)
+                cur, size = [], 0
+            cur.append(t)
+            size += n
+        if cur:
+            chunks.append(cur)
+        if not chunks:
+            chunks = [[expr]]
+
+        lines = []
+        for k, chunk in enumerate(chunks):
+            rhs = self.printer.doprint(sp.Add(*chunk, evaluate=False) if len(chunk) > 1 else chunk[0])
+            # sympy's own wrapper may already have inserted "&" breaks.
+            rhs = " ".join(part.strip().rstrip("&").strip() for part in rhs.split("\n"))
+            if operator == "+=" or k > 0:
+                lines.append(self._wrap(f"{target} = {target} + ({rhs})"))
+            else:
+                lines.append(self._wrap(f"{target} = {rhs}"))
+        return "\n".join(lines) + "\n"
+
+
 language_mapping = {
     "c": CCodePrinter,
     "c++": CXXCodePrinter,
+    "fortran": FortranCodePrinter,
 }
 
 
@@ -123,6 +238,16 @@ class FunctionPrinter:
         self.language = language
         self.precision = precision
         assert self.precision in ["float", "double"]
+        if language == "fortran":
+            if precision != "double":
+                raise NotImplementedError("Fortran output supports precision='double' only")
+            if gpu:
+                raise NotImplementedError("Fortran output does not support gpu=True")
+            self.statements = FortranStatementWriter(self.printer)
+        # Argument lists of every Fortran routine generated so far, in order,
+        # as {name: [(argname, kind)]} with kind one of "scalar", "in", "inout".
+        # The writer builds the order-dispatch wrappers from this.
+        self.signatures = {}
 
     def _array(
         self,
@@ -289,6 +414,145 @@ class FunctionPrinter:
         else:
             return "void {}({})".format(name, combined_inputs)
 
+    # ------------------------------------------------------------------
+    # Fortran 90 output
+    #
+    # Kept apart from the C path above so that path is untouched. The shape
+    # differs enough to justify it: declarations must precede statements (so
+    # every CSE temporary has to be collected and declared first), arrays are
+    # 1-based assumed-size dummies, and aliasing between dummies is forbidden
+    # by the language, which gives the compiler for free what FMMGEN_RESTRICT
+    # asks for in C.
+    # ------------------------------------------------------------------
+    def _fortran_reduce(self, name, matrix, coords, horner):
+        """Return (decls, temp_lines, exprs) for one output array.
+
+        decls: names of the local scalars (R, Rinv, CSE temporaries) to declare.
+        temp_lines: statements computing them, in dependency order.
+        exprs: one reduced expression per entry of matrix.
+        """
+        use_horner = self.horner if horner is None else horner
+        if use_horner:
+            matrix = sp.Matrix([sp_horner(e) if e.free_symbols else e for e in matrix])
+
+        decls, lines = [], []
+        r_squared = " + ".join(f"{s}*{s}" for s in coords)
+        if sp.symbols("R") in matrix.free_symbols:
+            decls.append("R")
+            lines.append(f"R = sqrt({r_squared})")
+        if sp.symbols("Rinv") in matrix.free_symbols:
+            decls.append("Rinv")
+            lines.append(f"Rinv = 1.0d0 / sqrt({r_squared})")
+
+        opscount = 0
+        if not self.debug:
+            sub_expressions, rmatrix = cse(matrix, optimizations=opts, symbols=SymbolIterator(name))
+            exprs = list(sp.Matrix(rmatrix))
+            for var, sub_expr in sub_expressions:
+                opscount += count_ops(sub_expr)
+                decls.append(str(var))
+                lines.append(self.statements.assign(str(var), sub_expr).rstrip("\n"))
+        else:
+            exprs = list(matrix)
+        opscount += count_ops(sp.Matrix(exprs))
+        return decls, lines, exprs, opscount
+
+    def _fortran_emit(self, target, exprs, operator):
+        """Assignment statements for every entry of an output array."""
+        lines = []
+        for i, e in enumerate(exprs):
+            if e == 0 and operator == "+=":
+                continue
+            lines.append(self.statements.assign(f"{target}({i + 1})", sp.sympify(e), operator).rstrip("\n"))
+        return lines
+
+    @staticmethod
+    def _fortran_declarations(args, extra_int=(), local=()):
+        """Declaration block for a routine with `args` = [(name, kind)]."""
+        out = ["implicit none"]
+        scalars = [n for n, k in args if k == "scalar"]
+        ins = [n for n, k in args if k == "in"]
+        inouts = [n for n, k in args if k == "inout"]
+        ints = [n for n, k in args if k == "int"]
+        if scalars:
+            out.append("real(wp), intent(in) :: " + ", ".join(scalars))
+        if ins:
+            out.append("real(wp), intent(in) :: " + ", ".join(f"{n}(*)" for n in ins))
+        if inouts:
+            out.append("real(wp), intent(inout) :: " + ", ".join(f"{n}(*)" for n in inouts))
+        if ints:
+            out.append("integer, intent(in) :: " + ", ".join(ints))
+        if extra_int:
+            out.append("integer :: " + ", ".join(extra_int))
+        # Several short statements, not one: a declaration list at high order
+        # runs to hundreds of CSE temporaries, past the 132-column limit.
+        for k in range(0, len(local), 8):
+            out.append("real(wp) :: " + ", ".join(local[k:k + 8]))
+        return out
+
+    def _fortran_routine(self, name, args, decls, body):
+        self.signatures[name] = args
+        text = f"subroutine {name}({', '.join(n for n, _ in args)})\n"
+        text += "\n".join("  " + d for d in decls) + "\n\n"
+        text += "\n".join(body) + "\n"
+        text += f"end subroutine {name}\n"
+        return text
+
+    def _fortran_generate(self, name, LHS, RHS, inputs, operator, internal, horner):
+        coords = tuple(s for s in inputs if type(s) is not sp.MatrixSymbol)
+        args = [(str(s), "in" if type(s) is sp.MatrixSymbol else "scalar") for s in inputs]
+        args.append((LHS, "inout"))
+
+        local, body, opscount = [], [], 0
+        for arr_name, matrix in internal:
+            d, tmp_lines, exprs, ops = self._fortran_reduce(arr_name, matrix, coords, None)
+            opscount += ops
+            local += d + [f"{arr_name}({len(matrix)})"]
+            body += tmp_lines + self._fortran_emit(arr_name, exprs, "=")
+        d, tmp_lines, exprs, ops = self._fortran_reduce(LHS, RHS, coords, horner)
+        opscount += ops
+        local += d
+        body += tmp_lines + self._fortran_emit(LHS, exprs, operator)
+
+        decls = self._fortran_declarations(args, local=local)
+        code = self._fortran_routine(name, args, decls, ["  " + b.replace("\n", "\n  ") for b in body])
+        header = f"subroutine {name}({', '.join(n for n, _ in args)})\n"
+        return header, code, opscount
+
+    def _fortran_generate_batch(self, name, LHS, RHS, symbols, source_size):
+        n_out = len(RHS)
+        acc = [f"{LHS.lower()}acc{i}" for i in range(n_out)]
+        coords = sp.symbols(" ".join(symbols)) if len(symbols) > 1 else (sp.Symbol(symbols[0]),)
+        # `begin`/`end` are C names; `end` is a Fortran keyword. Bounds are
+        # 1-based and INCLUSIVE here, the natural Fortran convention, and an
+        # empty range (ibeg > iend) is a no-op.
+        args = ([(f"t{d}", "scalar") for d in symbols]
+                + [(f"s{d}", "in") for d in symbols]
+                + [("S", "in"), ("ibeg", "int"), ("iend", "int"), (LHS, "inout")])
+
+        # The printer hook rewrites S(k) as it prints, so it must be active
+        # for the CSE temporaries as well as the output entries.
+        self.printer.moment_stride = source_size
+        try:
+            d, tmp_lines, exprs, opscount = self._fortran_reduce(LHS, RHS, coords, None)
+            acc_lines = []
+            for i, e in enumerate(exprs):
+                if e != 0:
+                    acc_lines.append(self.statements.assign(acc[i], sp.sympify(e), "+=").rstrip("\n"))
+        finally:
+            self.printer.moment_stride = None
+
+        decls = self._fortran_declarations(args, extra_int=["u"], local=list(symbols) + acc + d)
+        body = ["  " + f"{a} = 0.0d0" for a in acc]
+        body.append("  !$omp simd reduction(+:" + ",".join(acc) + ")")
+        body.append("  do u = ibeg, iend")
+        body += [f"    {c} = t{c} - s{c}(u)" for c in symbols]
+        body += ["    " + x.replace("\n", "\n    ") for x in tmp_lines + acc_lines]
+        body.append("  end do")
+        body += [f"  {LHS}({i + 1}) = {LHS}({i + 1}) + {a}" for i, a in enumerate(acc)]
+        code = self._fortran_routine(name, args, decls, body)
+        return f"subroutine {name}\n", code, opscount
+
     def generate_batch(self, name, LHS, RHS, symbols, source_size):
         """Emit a batched kernel: one target against a contiguous run of sources.
 
@@ -305,6 +569,8 @@ class FunctionPrinter:
         stays general over source order instead of being hand-specialised for
         the Coulomb monopole.
         """
+        if self.language == "fortran":
+            return self._fortran_generate_batch(name, LHS, RHS, symbols, source_size)
         n_out = len(RHS)
         acc = ["{}acc{}".format(LHS.lower(), i) for i in range(n_out)]
         pr = self.precision
@@ -353,6 +619,8 @@ class FunctionPrinter:
         # AND z, so R/Rinv's definition (built from this list, see _array)
         # was always safe to hardcode as 3-wide -- the planar 2-argument
         # P2P/P2P_batch variants are the first functions without z at all.
+        if self.language == "fortran":
+            return self._fortran_generate(name, LHS, RHS, list(inputs), operator, internal, horner)
         coords = tuple(s for s in inputs if type(s) is not sp.MatrixSymbol)
         header = self._generate_header(name, LHS, RHS, inputs)
         code = header + " {\n"
