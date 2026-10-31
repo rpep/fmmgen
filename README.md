@@ -275,6 +275,27 @@ Buckingham, `erfc(a r)/r`, `erf(a r)/r`, Yukawa and softened gravity.
 
 Kernel parameters are baked in at generation time.
 
+### Per-particle parameters and mixing rules
+
+Per-particle parameters with a separable mixing rule (Lennard-Jones with geometric or
+Lorentz-Berthelot mixing, per-particle epsilon and sigma) are handled by
+`fmmgen.separable.SeparableKernel`. The pair interaction is written as a short sum of radial
+kernels with per-particle weights, and each group of channels sharing one radial kernel is
+generated as one multi-channel operator set, with the functions of group `g` prefixed
+`<name>_g<g>_` in C and C++ (a module per group in Fortran):
+
+```python
+from fmmgen.separable import SeparableKernel
+
+lj = SeparableKernel.lennard_jones("geometric")   # r^-12 and r^-6 groups, 1 channel each
+lj.generate("lj", 8)                              # lj_g0.h/.c and lj_g1.h/.c
+```
+
+Geometric mixing gives 2 channels. Lorentz-Berthelot mixing expands binomially into 13 channels
+on r^-12 and 7 on r^-6, and `SeparableKernel.lennard_jones_lowrank` compresses the sigma factors
+to a given tolerance. The derivative tensor of a group is computed once and shared by its
+channels, which saves derivative work but not the contraction in M2L.
+
 ### Tensor-valued kernels and Helmholtz
 
 A kernel given as an array is a tensor kernel. `contract` is an einsum-style string,
