@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 import json
 import os
 
-__all__ = ["Problem", "Layout", "Manifest", "Backend", "CartesianBackend", "register_backend", "backends",
-           "get_backend", "recommend", "generate"]
+__all__ = ["Problem", "Layout", "Manifest", "Backend", "CartesianBackend", "SphericalBackend", "register_backend",
+           "backends", "get_backend", "recommend", "generate"]
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,7 @@ class Manifest:
     prefix: str = ""  # prepended to every function name
     by_order: dict = field(default_factory=dict)  # order -> backend name (parts of a mixed build)
     parts: list = field(default_factory=list)  # one sub-manifest per backend of a mixed build
+    options: dict = field(default_factory=dict)  # backend-specific facts a driver may need (see the backend)
 
     def to_dict(self):
         return {k: v for k, v in self.__dict__.items()}
@@ -86,7 +87,7 @@ class Backend:
         raise NotImplementedError
 
     def cost(self, problem, order):
-        """Relative cost estimate used by backend="auto" (lower is better), or None if unknown."""
+        """Relative cost estimate used by `recommend` (lower is better), or None if unknown."""
         return None
 
     def layout(self, problem, p):
@@ -135,6 +136,66 @@ class CartesianBackend(Backend):
                         {p: self.layout(problem, p).__dict__ for p in orders}, list(self.dependencies), prefix=prefix)
 
 
+def _is_laplace(kernel):
+    """True if the scalar kernel is exactly 1/|r| in three dimensions (checked numerically)."""
+    if kernel.dim != 3:
+        return False
+    for pt in ((0.7, -0.4, 0.9), (-1.3, 0.2, 2.1)):
+        value = float(kernel.expr.subs(dict(zip(kernel.variables, pt))))
+        if abs(value * (sum(c * c for c in pt) ** 0.5) - 1.0) > 1e-12:
+            return False
+    return True
+
+
+class SphericalBackend(Backend):
+    """Spherical-harmonic operators for the Laplace kernel 1/r (see `fmmgen.sh`).
+
+    (p+1)^2 real coefficients per expansion instead of the Cartesian (p+1)(p+2)(p+3)/6, an O(p^4) M2L
+    or an O(p^3) rotation-based one (`m2l="rotation"`, or the cached `M2Lrot_setup_p`/`M2Lrot_apply_p`
+    pair), and accuracy that keeps improving to 1e-8 and beyond, which the Cartesian operators reach only
+    at orders that take hours to generate. At moderate accuracy (about 3e-4 and looser) the Laplace-tuned
+    Cartesian operators are faster, so which backend is better depends on the order: see `recommend`.
+
+    Options: `m2l` ("plain" or "rotation"), `trunc` ("box" or "total"), `unroll`, `max_unroll`; see
+    `fmmgen.sh.generate_sh_code`. Cartesian-only options (CSE, minpow, horner) are ignored.
+    """
+
+    name = "spherical"
+    supports_prefix = True
+    dependencies = ("libm",)
+    _IGNORED = ("CSE", "minpow", "horner", "report")
+
+    def supports(self, problem):
+        if not _is_laplace(problem.kernel):
+            return False, "only the three-dimensional Laplace kernel 1/r"
+        if problem.source_order != 0 or problem.nchannels != 1:
+            return False, "charges only (source_order 0, one channel)"
+        if not (problem.potential and problem.field):
+            return False, "always computes the potential and the field"
+        return True, ""
+
+    def layout(self, problem, p):
+        if p < 1:
+            raise ValueError("order must be >= 1")
+        return Layout((p + 1) ** 2, (p + 1) ** 2, 1, 4)
+
+    def generate(self, problem, order, name, orders=None, language="c", prefix="", **options):
+        from .sh import generate_sh_code, rot_size
+
+        ok, why = self.supports(problem)
+        if not ok:
+            raise ValueError(f"spherical backend: {why}")
+        orders = sorted(orders) if orders is not None else list(range(1, order + 1))
+        opts = {k: v for k, v in options.items() if k not in self._IGNORED}
+        report = generate_sh_code(max(orders) + 1, name, orders=orders, language=language, prefix=prefix, **opts)
+        files = [os.path.basename(report["header"]), os.path.basename(report["source"])]
+        info = {"m2l": opts.get("m2l", "plain"), "trunc": opts.get("trunc", "box"), "unroll": report["unroll"],
+                "rotation_table_size": {p: rot_size(p) for p in orders}}
+        return Manifest(self.name, problem.kernel.name, language, orders, 0, 1, list(self.tiers), files,
+                        report["functions"], {p: self.layout(problem, p).__dict__ for p in orders},
+                        list(self.dependencies), prefix=prefix, options=info)
+
+
 _REGISTRY = {}
 
 
@@ -155,6 +216,7 @@ def get_backend(name):
 
 
 register_backend(CartesianBackend())
+register_backend(SphericalBackend())
 
 
 def _resolve(problem, backend, orders):

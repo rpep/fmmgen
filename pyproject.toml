@@ -36,3 +36,6 @@ select = ["E", "F", "W"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["E741"]
+# l, m, n, I are the standard names of the harmonic degree, order and solid harmonics
+"fmmgen/sh.py" = ["E741"]
+"fmmgen/sh_math.py" = ["E741"]
