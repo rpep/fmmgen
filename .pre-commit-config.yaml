@@ -1,0 +1,16 @@
+# Install once with:  uv run pre-commit install
+# Lint runs on commit and again on push, and mirrors the `lint` job in
+# .github/workflows/actions.yml. Local hooks use the ruff from the project dev dependencies, so there
+# is nothing extra to download and the hook cannot drift from CI.
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff check
+        entry: uv run ruff check
+        language: system
+        types: [python]
+        files: ^(fmmgen|tests)/
+        stages: [pre-commit, pre-push]

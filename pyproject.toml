@@ -17,6 +17,7 @@ dev = [
     "pytest>=7.2.0,<10",
     "black>=22.10.0,<23",
     "ruff>=0.15.0,<1",
+    "pre-commit>=4",
     "setuptools>=68",
 ]
 
