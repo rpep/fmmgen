@@ -275,6 +275,34 @@ Buckingham, `erfc(a r)/r`, `erf(a r)/r`, Yukawa and softened gravity.
 
 Kernel parameters are baked in at generation time.
 
+### Tensor-valued kernels and Helmholtz
+
+A kernel given as an array is a tensor kernel. `contract` is an einsum-style string,
+"kernel,source->output", and defaults to `"ij,j->i"` for a matrix:
+
+```python
+import numpy as np
+from fmmgen import Kernel
+from fmmgen.vector import stokeslet
+
+x, y, z = X = sp.symbols("x y z")
+r = sp.sqrt(x**2 + y**2 + z**2)
+G = np.eye(3, dtype=int) / r + np.einsum("i,j->ij", np.array(X, dtype=object), np.array(X, dtype=object)) / r**3
+vk = Kernel(G)                    # one channel per distinct non-zero entry
+st = stokeslet()                  # the same kernel as one biharmonic kernel with order-2 sources
+st.generate("stokes", 6)          # one operator set per group: stokes_g0.h/.c, ...
+```
+
+Each group is a scalar kernel generated with `nchannels` source channels, and its functions are
+prefixed `<name>_g<i>_` in C and C++ (in Fortran each group is its own module), so all groups link
+into one program. `stokeslet()` and `kelvin(nu)` use a registered decomposition into a single
+biharmonic kernel, which is much cheaper than splitting the channels. `source_weights`, `output` and
+`direct` convert between your source vectors, the operator arrays and a direct sum.
+
+`helmholtz_cos(k)` and `helmholtz_sin(k)` are the real and imaginary parts of exp(i k r) / r. For a
+complex source a + ib generate each with `nchannels=2`. They are accurate for low frequency only (k times
+the box size up to about 4).
+
 ## References
 
 The code was developed with particular reference to the following academic papers.
