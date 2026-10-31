@@ -7,7 +7,8 @@ import subprocess
 
 import pytest
 
-from fmmgen.kernel import gaussian_screened_coulomb, generate_kernel_code
+from fmmgen.kernel import (gaussian_screened_coulomb, generate_kernel_code, nterms, power_law, shell_indices,
+                           source_indices, yukawa)
 from test_kernel_library import LIB
 
 gfortran = shutil.which("gfortran")
@@ -40,36 +41,86 @@ def test_fortran_is_valid_for_every_library_kernel(tmp_path):
     assert not bad, bad
 
 
-@pytest.mark.skipif(gfortran is None or shutil.which("g++") is None, reason="needs gfortran and g++")
-def test_fortran_and_cpp_agree_for_erf(tmp_path):
-    # erf has a Piecewise radial recurrence: the Fortran printer maps it to merge().
-    k, p, n = gaussian_screened_coulomb(0.7), 6, 84
-    for lang, ext in (("fortran", "f90"), ("c++", "cpp")):
-        generate_kernel_code(k, p, f"gsc_{ext}", language=lang, orders=[p], src_dir=str(tmp_path),
-                             include_dir=str(tmp_path))
-    (tmp_path / "d.f90").write_text(f"""program d
-use gsc_f90
-real(wp) :: M({n}), L({n})
+CHAIN_CASES = [
+    ("erf", lambda: gaussian_screened_coulomb(0.7), 0, 1),  # Piecewise radial recurrence -> merge()
+    ("dipole2", lambda: yukawa(1.0), 1, 2),  # order-1 sources, two channels: the array layouts differ
+    ("quad", lambda: power_law(3), 2, 1),
+]
+
+
+def _chain_driver(lang, p, s, nch):
+    """Same calls in Fortran and C++: S2M, M2M, M2L, L2L, L2P and P2P, printing every array."""
+    d = 3
+    shell = len(shell_indices(d, s)) * nch
+    nm, nl, nf = len(source_indices(d, p, s)) * nch, nterms(d, p - s) * nch, 4 * nch  # F: phi and 3 field terms/channel
+    pts = [(0.3, -0.2, 0.1), (-0.5, 0.4, 0.2), (2.0, -1.5, 3.0), (0.4, 0.1, -0.3), (0.2, -0.1, 0.3), (1.1, 0.7, -0.9)]
+    if lang == "f90":
+        c = [", ".join(f"{v}d0" for v in pt) for pt in pts]
+        return f"""program d
+use k_f90
+real(wp) :: S({shell}), M({nm}), Ms({nm}), L({nl}), Ls({nl}), F({nf}), F2({nf})
 integer :: i
-do i = 1, {n}
-  M(i) = sin(0.37d0*i)
+do i = 1, {shell}
+  S(i) = sin(0.9d0*i) + 0.3d0
 end do
-L = 0
-call M2L(2.0d0, -1.5d0, 3.0d0, M, L, {p})
-do i = 1, {n}
-  write(*,'(es24.16)') L(i)
-end do
+M = 0; Ms = 0; L = 0; Ls = 0; F = 0; F2 = 0
+call S2M({c[0]}, S, M, {p})
+call M2M({c[1]}, M, Ms, {p})
+call M2L({c[2]}, Ms, L, {p})
+call L2L({c[3]}, L, Ls, {p})
+call L2P({c[4]}, Ls, F, {p})
+call P2P({c[5]}, S, F2)
+write(*,'(es24.16)') Ms, L, Ls, F, F2
 end program
-""")
-    (tmp_path / "d.cpp").write_text(f"""#include <cstdio>
+"""
+    c = [", ".join(str(v) for v in pt) for pt in pts]
+    return f"""#include <cstdio>
 #include <cmath>
-#include "gsc_cpp.h"
-int main() {{ double M[{n}], L[{n}] = {{0}}; for (int i = 1; i <= {n}; i++) M[i-1] = std::sin(0.37*i);
-  M2L(2.0, -1.5, 3.0, M, L, {p}); for (int i = 0; i < {n}; i++) std::printf("%24.16e\\n", L[i]); }}
-""")
-    subprocess.run([gfortran, "-O1", "gsc_f90.f90", "d.f90", "-o", "df"], cwd=tmp_path, check=True)
-    subprocess.run(["g++", "-O1", "gsc_cpp.cpp", "d.cpp", "-o", "dc"], cwd=tmp_path, check=True)
-    a, b = (list(map(float, subprocess.run([f"./{e}"], cwd=tmp_path, capture_output=True, text=True,
-                                           check=True).stdout.split())) for e in ("df", "dc"))
-    assert len(a) == len(b) == n
-    assert max(abs(x - y) / (abs(y) + 1e-300) for x, y in zip(a, b)) < 1e-12
+#include "k_cpp.h"
+int main() {{
+  double S[{shell}], M[{nm}] = {{0}}, Ms[{nm}] = {{0}}, L[{nl}] = {{0}}, Ls[{nl}] = {{0}};
+  double F[{nf}] = {{0}}, F2[{nf}] = {{0}};
+  for (int i = 1; i <= {shell}; i++) S[i-1] = std::sin(0.9*i) + 0.3;
+  S2M({c[0]}, S, M, {p});  M2M({c[1]}, M, Ms, {p});  M2L({c[2]}, Ms, L, {p});
+  L2L({c[3]}, L, Ls, {p});  L2P({c[4]}, Ls, F, {p});  P2P({c[5]}, S, F2);
+  for (double v : Ms) std::printf("%24.16e\\n", v);
+  for (double v : L) std::printf("%24.16e\\n", v);
+  for (double v : Ls) std::printf("%24.16e\\n", v);
+  for (double v : F) std::printf("%24.16e\\n", v);
+  for (double v : F2) std::printf("%24.16e\\n", v);
+}}
+"""
+
+
+@pytest.mark.skipif(gfortran is None or shutil.which("g++") is None, reason="needs gfortran and g++")
+@pytest.mark.parametrize("name,make,s,nch", CHAIN_CASES, ids=[c[0] for c in CHAIN_CASES])
+def test_fortran_and_cpp_agree(tmp_path, name, make, s, nch):
+    p = 4
+    for lang, ext in (("fortran", "f90"), ("c++", "cpp")):
+        generate_kernel_code(make(), p, f"k_{ext}", language=lang, orders=[p], source_order=s, nchannels=nch,
+                             src_dir=str(tmp_path), include_dir=str(tmp_path))
+        (tmp_path / f"d.{ext}").write_text(_chain_driver(ext, p, s, nch))
+    subprocess.run([gfortran, "-O1", "k_f90.f90", "d.f90", "-o", "df"], cwd=tmp_path, check=True)
+    subprocess.run(["g++", "-O1", "k_cpp.cpp", "d.cpp", "-o", "dc"], cwd=tmp_path, check=True)
+    f90, cpp = (list(map(float, subprocess.run([f"./{e}"], cwd=tmp_path, capture_output=True, text=True,
+                                               check=True).stdout.split())) for e in ("df", "dc"))
+    assert len(f90) == len(cpp) and len(cpp) > 8
+    scale = max(abs(v) for v in cpp)
+    assert max(abs(a - b) for a, b in zip(f90, cpp)) < 1e-12 * scale
+
+
+def test_fortran_printer_maps_conditionals_and_constants():
+    import sympy as sp
+
+    from fmmgen.printers import FortranCodePrinter
+
+    pr = FortranCodePrinter()
+    t = sp.Symbol("t")
+    # three branches nest into merge(); a comparison on its own is a real 0/1 (CSE temporaries are real)
+    pw = sp.Piecewise((1, t > 2), (2, t > 1), (3, True))
+    assert pr.doprint(pw) == "merge(1.0d0, merge(2.0d0, 3.0d0, t > 1.0d0), t > 2.0d0)"
+    assert pr.doprint(t > 2) == "merge(1.0d0, 0.0d0, t > 2.0d0)"
+    assert pr.doprint(sp.Piecewise((5, True))) == "5.0d0"
+    # a constant is a literal, not a `parameter` declaration, and extra-precision floats are shortened
+    assert pr.doprint(sp.pi) == "3.1415926535897932d0"
+    assert pr.doprint(sp.Float("0.1234567890123456789012345678901234567890", 60)) == "0.12345678901234568d0"
