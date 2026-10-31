@@ -756,6 +756,80 @@ def _dedupe_R(code):
     return "\n".join(out)
 
 
+# ----------------------------------------------------------------------------
+# Planar variants: sources and targets confined to the z = 0 plane (moments stay full 3D).
+#
+# Every displacement then has z = 0. That kills every z power in the Taylor shifts, so the multipole
+# array can only have n_z <= source_order non-zero entries, and L2P at dz = 0 only reads local entries
+# with n_z <= 1 (n_z <= 0 without the field). The planar operators are the full operators restricted to
+# those entries, with z set to 0, so they are valid for any kernel.
+# ----------------------------------------------------------------------------
+def _planar_keep(dim, p, s, nch, field):
+    """Global indices of the multipole and local entries kept by the planar variants (channel-major)."""
+    J, idx = source_indices(dim, p, s), multi_indices(dim, p - s)
+    zmax = 1 if field else 0
+    keep_m = [c * len(J) + j for c in range(nch) for n, j in sorted(J.items(), key=lambda t: t[1]) if n[-1] <= s]
+    keep_l = [c * len(idx) + i for c in range(nch) for n, i in sorted(idx.items(), key=lambda t: t[1])
+              if n[-1] <= zmax]
+    return keep_m, keep_l
+
+
+def planar_sizes(dim, p, s, nch, field):
+    """(multipole, local) array lengths of the planar variants at order p."""
+    km, kl = _planar_keep(dim, p, s, nch, field)
+    return len(km), len(kl)
+
+
+def _planar_ops(ops, rows, inputs, z):
+    """`ops[r] for r in rows` with z = 0 and the input arrays restricted to their kept entries.
+
+    inputs: {array name: (full length, kept global indices)}; entries that are dropped become 0."""
+    rep = {z: sp.Integer(0)}
+    for name, (n, keep) in inputs.items():
+        full, new = sp.MatrixSymbol(name, n, 1), sp.MatrixSymbol(name, len(keep), 1)
+        pos = {g: k for k, g in enumerate(keep)}
+        for g in range(n):
+            rep[full[g]] = new[pos[g]] if g in pos else sp.Integer(0)
+    return [sp.sympify(ops[r]).xreplace(rep) for r in rows]
+
+
+def _planar_arrays(arrays, ops, z):
+    """Set z = 0 in the internal derivative arrays, drop the entries that vanish or are never used, and
+    renumber the rest. Returns (arrays, ops)."""
+    zero = sp.Integer(0)
+    rep = {z: zero}
+    sym = {name: sp.MatrixSymbol(name, len(mat), 1) for name, mat in arrays}
+    exprs = {}
+    for name, mat in arrays:
+        exprs[name] = []
+        for i, e in enumerate(mat):
+            e = sp.sympify(e).xreplace(rep)
+            exprs[name].append(e)
+            if e == 0:
+                rep[sym[name][i]] = zero  # every later reference to a vanishing entry vanishes too
+    ops = [e.xreplace(rep) for e in ops]
+
+    def used(e):
+        return {a for a in e.atoms(MatrixElement) if a.parent.name in sym}
+
+    needed = set()
+    for e in ops:
+        needed |= used(e)
+    for name, _ in reversed(arrays):
+        for i, e in enumerate(exprs[name]):
+            if sym[name][i] in needed:
+                needed |= used(e)
+    keep = {name: [i for i in range(len(exprs[name])) if sym[name][i] in needed] for name, _ in arrays}
+    remap, new = {}, {}
+    for name, idxs in keep.items():
+        if idxs:
+            new[name] = sp.MatrixSymbol(name, len(idxs), 1)
+            remap.update({sym[name][i]: new[name][k] for k, i in enumerate(idxs)})
+    out = [(name, sp.Matrix([exprs[name][i].xreplace(remap) for i in keep[name]])) for name, _ in arrays
+           if keep[name]]
+    return out, [e.xreplace(remap) for e in ops]
+
+
 def _wrappers_c(headers, orders):
     """Order-dispatch wrapper declarations and definitions (C/C++)."""
     from .writer import _parameter_names
@@ -795,6 +869,7 @@ def generate_kernel_code(
     source_order=0,
     nchannels=1,
     prefix="",
+    planar=False,
 ):
     """Write {name}.h/.c (or .cpp) -- or {name}.f90 -- for `kernel`.
 
@@ -805,6 +880,9 @@ def generate_kernel_code(
         L2L_p(x,y,z, L, Ls)        L2P_p(x,y,z, L, F)     M2P_p(x,y,z, M, F)
         P2P(x,y,z, S, F)           P2P_batch(tx,ty,tz, sx,sy,sz, S, begin, end, F)
     F holds [phi, -dphi/dx_i...] (potential and/or field).
+
+    `order` is the highest order emitted. FMMGEN_MAXORDER in the header is one more, an exclusive bound as in
+    `generate_code`, so a driver loops `for (order = FMMGEN_MINORDER; order < FMMGEN_MAXORDER; ...)`.
 
     minpow: integer powers up to this are written as products instead of pow()
     calls, which is much faster for the steep kernels (r^-6, r^-12). None (default)
@@ -823,8 +901,15 @@ def generate_kernel_code(
     so that operator sets for different kernels can be linked into one program. C and C++ only: Fortran
     output is namespaced by its module, which is named after `name`.
 
+    planar: also emit the planar variants S2Mxy_p ... M2Pxy_p, P2Pxy and P2P_batchxy for sources and targets
+    confined to the z = 0 plane (three dimensions; moments stay full 3D), valid for any kernel. They take the
+    same arguments but smaller multipole and local arrays (n_z <= source_order, and n_z <= 1 with the
+    field, n_z <= 0 without): see FMMGEN_PLANAR_MULTIPOLESIZE and FMMGEN_PLANAR_LOCALSIZE, indexed by order.
+
     report: optional dict, filled with {(op, p): (opscount, seconds)}.
     """
+    if planar and kernel.dim != 3:
+        raise ValueError("planar variants need a three-dimensional kernel")
     if prefix and language == "fortran":
         raise ValueError("prefix is not supported for fortran output (its module name is the namespace)")
     if prefix and not prefix.replace("_", "a").isalnum():
@@ -857,29 +942,63 @@ def generate_kernel_code(
         report[tuple(opname.rsplit("_", 1)) if opname[-1].isdigit() else (opname, None)] = (
             ops, time.time() - t0)
 
+    zsym = vars_[-1]
+
     for q in orders:
         nm = len(source_indices(dim, q, s))
         nl = nterms(dim, q - s)
         Mq = sp.MatrixSymbol("M", nm * nch, 1)
         Lq = sp.MatrixSymbol("L", nl * nch, 1)
+        Ssym = sp.MatrixSymbol("S", shell * nch, 1)
+        if planar:
+            keep_m, keep_l = _planar_keep(dim, q, s, nch, field)
+            Mxy, Lxy = sp.MatrixSymbol("M", len(keep_m), 1), sp.MatrixSymbol("L", len(keep_l), 1)
+            all_rows = None  # outputs F keep every row
+            in_m, in_l = {"M": (nm * nch, keep_m)}, {"L": (nl * nch, keep_l)}
+
+        def planar_emit(opname, lhs, ops, rows, inputs_map, inputs, Dt=None):
+            ops_xy = _planar_ops(ops, range(len(ops)) if rows is None else rows, inputs_map, zsym)
+            if Dt is None:
+                emit(f"{opname}xy_{q}", lhs, ops_xy, inputs)
+            else:
+                arrays, ops_xy = _planar_arrays(Dt.arrays, ops_xy, zsym)
+                emit(f"{opname}xy_{q}", lhs, ops_xy, inputs, internal=arrays)
+
         if "S2M" in operators:
-            emit(f"S2M_{q}", "M", _ops_S2M(dim, vars_, q, s, nch), coords + [sp.MatrixSymbol("S", shell * nch, 1)])
+            ops = _ops_S2M(dim, vars_, q, s, nch)
+            emit(f"S2M_{q}", "M", ops, coords + [Ssym])
+            if planar:
+                planar_emit("S2M", "M", ops, keep_m, {}, coords + [Ssym])
         if "M2M" in operators:
-            emit(f"M2M_{q}", "Ms", _ops_M2M(dim, vars_, q, s, nch), coords + [Mq])
+            ops = _ops_M2M(dim, vars_, q, s, nch)
+            emit(f"M2M_{q}", "Ms", ops, coords + [Mq])
+            if planar:
+                planar_emit("M2M", "Ms", ops, keep_m, in_m, coords + [Mxy])
         if "M2L" in operators:
             t0 = time.time()
             Dt = _DTensor(kernel, q)
             tD = time.time() - t0
-            emit(f"M2L_{q}", "L", _ops_M2L(dim, q, Dt, s, nch), coords + [Mq], internal=Dt.arrays)
+            ops = _ops_M2L(dim, q, Dt, s, nch)
+            emit(f"M2L_{q}", "L", ops, coords + [Mq], internal=Dt.arrays)
             report[("D-derivation", str(q))] = (0, tD)
+            if planar:
+                planar_emit("M2L", "L", ops, keep_l, in_m, coords + [Mxy], Dt)
         if "L2L" in operators:
-            emit(f"L2L_{q}", "Ls", _ops_L2L(dim, vars_, q, s, nch), coords + [Lq])
+            ops = _ops_L2L(dim, vars_, q, s, nch)
+            emit(f"L2L_{q}", "Ls", ops, coords + [Lq])
+            if planar:
+                planar_emit("L2L", "Ls", ops, keep_l, in_l, coords + [Lxy])
         if "L2P" in operators:
-            emit(f"L2P_{q}", "F", _ops_L2P(dim, vars_, q, potential, field, s, nch), coords + [Lq])
+            ops = _ops_L2P(dim, vars_, q, potential, field, s, nch)
+            emit(f"L2P_{q}", "F", ops, coords + [Lq])
+            if planar:
+                planar_emit("L2P", "F", ops, all_rows, in_l, coords + [Lxy])
         if "M2P" in operators:
             Dt = _DTensor(kernel, q + (1 if field else 0))
-            emit(f"M2P_{q}", "F", _ops_M2P(dim, q, Dt, potential, field, s, nch), coords + [Mq],
-                 internal=Dt.arrays)
+            ops = _ops_M2P(dim, q, Dt, potential, field, s, nch)
+            emit(f"M2P_{q}", "F", ops, coords + [Mq], internal=Dt.arrays)
+            if planar:
+                planar_emit("M2P", "F", ops, all_rows, in_m, coords + [Mxy], Dt)
 
     if "P2P" in operators:
         P2P = _ops_P2P(kernel, potential, field, s, nch)
@@ -888,11 +1007,23 @@ def generate_kernel_code(
                                          shell * nch)
         header += head
         body += _dedupe_R(code) + "\n" if language != "fortran" else code + "\n"
+        if planar:
+            P2P_xy = _planar_ops(P2P, range(len(P2P)), {}, zsym)
+            emit("P2Pxy", "F", P2P_xy, coords + [sp.MatrixSymbol("S", shell * nch, 1)])
+            head, code, _ = p.generate_batch(prefix + "P2P_batchxy", "F", sp.Matrix(P2P_xy),
+                                             [str(v) for v in vars_], shell * nch)
+            header += head
+            body += _dedupe_R(code) + "\n" if language != "fortran" else code + "\n"
 
     osize = ((1 if potential else 0) + (dim if field else 0)) * nch
+    planar_tables = None
+    if planar:  # indexed by order 0..order; 0 where the order is below the source order
+        sizes = [planar_sizes(dim, o, s, nch, field) if o >= s else (0, 0) for o in range(order + 1)]
+        planar_tables = ([a for a, _ in sizes], [b for _, b in sizes])
 
     if language == "fortran":
-        _write_fortran_kernel(p, body, name, orders, kernel, osize, src_dir or include_dir)
+        _write_fortran_kernel(p, body, name, orders, kernel, osize, src_dir or include_dir,
+                              planar_sizes=planar_tables if planar else None)
         return report
 
     decls, defs = _wrappers_c(header.split(";\n"), orders)
@@ -910,9 +1041,14 @@ def generate_kernel_code(
         f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
         f.write(_RESTRICT_MACRO)
         m = "FMMGEN_" + (prefix.upper().rstrip("_") + "_" if prefix else "")
-        f.write(f"#define {m}MINORDER {start}\n#define {m}MAXORDER {order}\n")
+        f.write(f"#define {m}MINORDER {start}\n#define {m}MAXORDER {order + 1}\n")
         f.write(f"#define {m}DIM {dim}\n#define {m}SOURCEORDER {s}\n#define {m}NCHANNELS {nch}\n")
         f.write(f"#define {m}SOURCESIZE {shell * nch}\n#define {m}OUTPUTSIZE {osize}\n")
+        if planar:
+            f.write(f"#define {m}PLANAR 1\n")
+            f.write("/* Array sizes of the xy-suffixed operators only, indexed by order. */\n")
+            f.write(f"static const size_t {m}PLANAR_MULTIPOLESIZE[] = {{{', '.join(map(str, planar_tables[0]))}}};\n")
+            f.write(f"static const size_t {m}PLANAR_LOCALSIZE[] = {{{', '.join(map(str, planar_tables[1]))}}};\n")
         f.write(f"/* kernel: {kernel.name.replace('*/', '')} ; derivative method: {kernel.method} */\n")
         f.write(header)
     with open(path(src_dir, fext), "w") as f:
@@ -922,16 +1058,21 @@ def generate_kernel_code(
     return report
 
 
-def _write_fortran_kernel(p, body, name, orders, kernel, osize, out_dir):
+def _write_fortran_kernel(p, body, name, orders, kernel, osize, out_dir, planar_sizes=None):
     order, start = max(orders), min(orders)
     out = [f"module {name}", "  implicit none", "  private", "  integer, parameter, public :: wp = kind(1.0d0)"]
     out += [
         f"  integer, parameter, public :: FMMGEN_MINORDER = {start}",
-        f"  integer, parameter, public :: FMMGEN_MAXORDER = {order}",
+        f"  integer, parameter, public :: FMMGEN_MAXORDER = {order + 1}",
         f"  integer, parameter, public :: FMMGEN_DIM = {kernel.dim}",
         "  integer, parameter, public :: FMMGEN_SOURCESIZE = 1",
         f"  integer, parameter, public :: FMMGEN_OUTPUTSIZE = {osize}",
+        f"  logical, parameter, public :: FMMGEN_PLANAR = {'.true.' if planar_sizes else '.false.'}",
     ]
+    if planar_sizes:
+        for label, values in zip(("MULTIPOLE", "LOCAL"), planar_sizes):
+            out.append(f"  integer, parameter, public :: FMMGEN_PLANAR_{label}SIZE(0:{order}) = (/ "
+                       + ", ".join(map(str, values)) + " /)")
     suffix = f"_{start}"
     stems = [n[: -len(suffix)] for n in p.signatures if n.endswith(suffix)]
     public = list(dict.fromkeys(stems + [n for n in p.signatures if not n.endswith(suffix) and not n[-1].isdigit()]))

@@ -124,3 +124,22 @@ def test_fortran_printer_maps_conditionals_and_constants():
     # a constant is a literal, not a `parameter` declaration, and extra-precision floats are shortened
     assert pr.doprint(sp.pi) == "3.1415926535897932d0"
     assert pr.doprint(sp.Float("0.1234567890123456789012345678901234567890", 60)) == "0.12345678901234568d0"
+
+
+def test_header_macros_agree_with_generate_code(tmp_path):
+    # a driver loops `order < FMMGEN_MAXORDER` over either generator's output: the conventions must match
+    import fmmgen
+
+    for sub in ("old", "new"):
+        (tmp_path / sub).mkdir()
+    fmmgen.generate_code(4, "ops", src_dir=str(tmp_path / "old"), include_dir=str(tmp_path / "old"), CSE=True,
+                         minpow=11, cache_dir=None)
+    generate_kernel_code(power_law(1), 3, "ops", src_dir=str(tmp_path / "new"), include_dir=str(tmp_path / "new"))
+
+    def macros(d):
+        text = (tmp_path / d / "ops.h").read_text()
+        return {k: re.search(rf"#define FMMGEN_{k} (\d+)", text).group(1)
+                for k in ("MINORDER", "MAXORDER", "SOURCEORDER", "SOURCESIZE", "OUTPUTSIZE")}
+
+    assert macros("old") == macros("new") == {"MINORDER": "1", "MAXORDER": "4", "SOURCEORDER": "0",
+                                              "SOURCESIZE": "1", "OUTPUTSIZE": "4"}

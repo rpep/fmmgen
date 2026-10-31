@@ -40,6 +40,7 @@ from fmmgen.generator import (
 )
 
 import logging
+import re
 
 logger = logging.getLogger(name="fmmgen")
 
@@ -90,7 +91,15 @@ def _parameter_names(decl):
     return [arg.split()[-1].lstrip("*") for arg in argstr.split(",") if arg.strip()]
 
 
-def _write_fortran(p, body, name, order, start, source_order, potential, field, compress, planar, out_dir):
+def _wrapper_declaration(decl, first):
+    """The order-dispatch declaration for `void NAME_<first>(args)`: drop the order suffix from the
+    function name only (a prefix or an argument name may contain it too) and add `int order`."""
+    decl = re.sub(rf"(\w+)_{first}\(", r"\1(", decl, count=1)
+    head, _, tail = decl.rpartition(")")
+    return head + ", int order)" + tail
+
+
+def _write_fortran(p, body, name, order, start, orders, source_order, potential, field, compress, planar, out_dir):
     """Write {name}.f90: one module holding every operator and its wrappers.
 
     Free-form Fortran 90, `implicit none` throughout. The FMMGEN_* constants
@@ -144,7 +153,7 @@ def _write_fortran(p, body, name, order, start, source_order, potential, field, 
         out.append(f"subroutine {stem}({names})")
         out += ["  " + d for d in p._fortran_declarations(args)]
         out.append("  select case (order)")
-        for i in range(start, order):
+        for i in orders:
             out.append(f"  case ({i})")
             out.append(f"    call {stem}_{i}({call_args})")
         out.append("  case default")
@@ -180,11 +189,13 @@ def _order_specs(i, cfg):
     planar = cfg["planar"]
     specs = []
 
+    prefix = cfg.get("prefix", "")
+
     def emit(name, LHS, RHS, inputs, **kw):
-        specs.append(("gen", name, LHS, RHS, list(inputs), kw))
+        specs.append(("gen", prefix + name, LHS, RHS, list(inputs), kw))
 
     def emit_batch(name, LHS, RHS, inputs, *args):
-        specs.append(("batch", name, LHS, RHS, list(inputs), {"args": args}))
+        specs.append(("batch", prefix + name, LHS, RHS, list(inputs), {"args": args}))
 
     M_dict, _ = generate_mappings(i, symbols, "grevlex", source_order=source_order)
     L_dict, _ = generate_mappings(i - source_order, symbols, "grevlex", source_order=0)
@@ -669,6 +680,8 @@ def generate_code(
     split=False,
     cache_dir="auto",
     kernel=None,
+    orders=None,
+    prefix="",
 ):
     """
     Inputs:
@@ -830,17 +843,28 @@ def generate_code(
         generates the orders it has not seen. Delete the directory to
         invalidate.
 
+    orders, list of int:
+        Emit exactly these expansion degrees (they need not be contiguous, and must be at least the first
+        degree that would be emitted by default) instead of every degree below ``order``. ``order`` must
+        then exceed the largest, and FMMGEN_MAXORDER stays exclusive. The order-dispatch wrappers cover only
+        these degrees.
+
+    prefix, str:
+        Prepended to every emitted function and to the header macros (FMMGEN_<PREFIX>MAXORDER ...), so that
+        this operator set can be linked into one program with another (another backend's, say). Plain C and
+        C++ only.
+
     kernel, fmmgen.kernel.Kernel:
         Generate operators for a general translation-invariant kernel instead
         of Laplace 1/r (monopole sources, any p, 1-3 dimensions; minpow 0 means automatic). Delegates to
-        fmmgen.kernel.generate_kernel_code with orders 1..order; the Laplace-only
+        fmmgen.kernel.generate_kernel_code with orders 1..order-1 (as without ``kernel``); the Laplace-only
         options (compress, planar, source_order, harmonic_derivs, cython,
         atomic, gpu) do not apply. With kernel=None nothing changes.
     """
     if kernel is not None:
         from fmmgen.kernel import generate_kernel_code
 
-        generate_kernel_code(kernel, order, name, language=language, CSE=CSE, potential=potential, field=field,
+        generate_kernel_code(kernel, order - 1, name, language=language, CSE=CSE, potential=potential, field=field,
                              minpow=minpow or None, include_dir=include_dir, src_dir=src_dir)
         return
     if save_opscounts:
@@ -861,6 +885,11 @@ def generate_code(
         fext = "cpp"
         hext = "h"
 
+    if prefix:
+        if language == "fortran" or cython:
+            raise ValueError("prefix is only supported for plain C and C++ output")
+        if not prefix.replace("_", "a").isalnum() or prefix[0].isdigit():
+            raise ValueError("prefix must be a valid C identifier fragment")
     logger.info(f"Generating FMM operators to order {order}")
     assert precision in ["double", "float"], "Precision must be float or double"
     logger.info(f"Precision = {precision}")
@@ -918,8 +947,17 @@ def generate_code(
         harmonic_derivs=harmonic_derivs,
         compress=compress,
         planar=planar,
+        prefix=prefix,
     )
-    orders = list(range(start, order))
+    if orders is None:
+        orders = list(range(start, order))
+    else:
+        orders = sorted(set(orders))
+        if not orders or orders[0] < start:
+            raise ValueError(f"orders must be a non-empty list of degrees >= {start}")
+        if order <= orders[-1]:
+            raise ValueError("order must exceed the largest of orders (FMMGEN_MAXORDER is exclusive)")
+        start = cfg["start"] = orders[0]
     printer_kwargs = dict(language=language, precision=precision, debug=not CSE, minpow=minpow, horner=horner)
     if language == "fortran" and jobs != 1:
         # The Fortran printer records each routine's argument list on the
@@ -949,12 +987,12 @@ def generate_code(
             counts[opname] = n
         if save_opscounts:
             if i == start:
-                f.write(f"P2P,{counts['P2P']}\n")
+                f.write(f"P2P,{counts[prefix + 'P2P']}\n")
             for stem in ("S2M", "M2M", "M2L", "L2P", "L2L", "M2P"):
-                f.write(f"{stem}_{i},{counts[f'{stem}_{i}']}\n")
+                f.write(f"{stem}_{i},{counts[f'{prefix}{stem}_{i}']}\n")
     body = "".join(code for _, code in chunks)
     if language == "fortran":
-        _write_fortran(p, body, name, order, start, source_order, potential, field,
+        _write_fortran(p, body, name, order, start, orders, source_order, potential, field,
                        compress, planar, src_dir or include_dir)
         return
 
@@ -976,7 +1014,7 @@ def generate_code(
             # print(f"{func} not unique")
             # print(f"  {end_string}  {function_name[-len(end_string)-1:]}")
 
-    wrapper_funcs = [f.replace(")", ", int order)").replace(f"_{start}", "") for f in unique_funcs]
+    wrapper_funcs = [_wrapper_declaration(f, start) for f in unique_funcs]
 
     #  print(wrapper_funcs)
 
@@ -999,7 +1037,7 @@ def generate_code(
         args = ", ".join(_parameter_names(func))
         code = wfunc + " {\n"
         code += "switch (order) {\n"
-        for i in range(start, order):
+        for i in orders:
             code += "  case {}:\n".format(i)
             code += f"    {stem}_{i}({args});\n    break;\n"
         code += "  }\n}\n"
@@ -1013,17 +1051,18 @@ def generate_code(
     # P2P_batch takes size_t range bounds.
     f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
     f.write(_RESTRICT_MACRO)
-    f.write(f"#define FMMGEN_MINORDER {start}\n")
-    f.write(f"#define FMMGEN_MAXORDER {order}\n")
-    f.write(f"#define FMMGEN_SOURCEORDER {source_order}\n")
-    f.write(f"#define FMMGEN_SOURCESIZE {Nterms(source_order) - Nterms(source_order - 1)}\n")
+    m = "FMMGEN_" + (prefix.upper().rstrip("_") + "_" if prefix else "")  # macro prefix
+    f.write(f"#define {m}MINORDER {start}\n")
+    f.write(f"#define {m}MAXORDER {order}\n")
+    f.write(f"#define {m}SOURCEORDER {source_order}\n")
+    f.write(f"#define {m}SOURCESIZE {Nterms(source_order) - Nterms(source_order - 1)}\n")
     if potential and not field:
         osize = 1
     elif field and not potential:
         osize = 3
     elif field and potential:
         osize = 4
-    f.write(f"#define FMMGEN_OUTPUTSIZE {osize}\n")
+    f.write(f"#define {m}OUTPUTSIZE {osize}\n")
     if compress:
         # Only emitted when compressed. Uncompressed, the sizes are Nterms(order)
         # and callers already derive them that way -- adding these defines
@@ -1034,15 +1073,15 @@ def generate_code(
         # below FMMGEN_MINORDER are present only to keep the indexing direct.
         msizes = ", ".join(str(Nkeep(o, source_order)) for o in range(order + 1))
         lsizes = ", ".join(str(Nkeep(o - source_order)) for o in range(order + 1))
-        f.write("#define FMMGEN_COMPRESSED 1\n")
+        f.write(f"#define {m}COMPRESSED 1\n")
         f.write(
             "/* Array sizes for the *c-suffixed* operators only. The trace-free\n"
             "   basis drops the C(p+3,3) - (p+1)^2 redundant coefficients, so these\n"
             "   are (p+1)^2; the unsuffixed operators still take Nterms(order).\n"
             "   Index by order. */\n"
         )
-        f.write(f"static const size_t FMMGEN_MULTIPOLESIZE[] = {{{msizes}}};\n")
-        f.write(f"static const size_t FMMGEN_LOCALSIZE[] = {{{lsizes}}};\n")
+        f.write(f"static const size_t {m}MULTIPOLESIZE[] = {{{msizes}}};\n")
+        f.write(f"static const size_t {m}LOCALSIZE[] = {{{lsizes}}};\n")
     if planar:
         # Independent of FMMGEN_COMPRESSED -- both can be defined in the same
         # header, since the two variants never touch each other's arrays.
@@ -1055,14 +1094,14 @@ def generate_code(
         plsizes = ", ".join(
             str(Nterms_planar(o - source_order, 1 if field else 0)) for o in range(order + 1)
         )
-        f.write("#define FMMGEN_PLANAR 1\n")
+        f.write(f"#define {m}PLANAR 1\n")
         f.write(
             "/* Array sizes for the *xy-suffixed* operators only. Retained set is\n"
             "   n_z <= source_order for the multipole array, n_z <= 1 (field) or\n"
             "   <= 0 (potential only) for the local array. Index by order. */\n"
         )
-        f.write(f"static const size_t FMMGEN_PLANAR_MULTIPOLESIZE[] = {{{pmsizes}}};\n")
-        f.write(f"static const size_t FMMGEN_PLANAR_LOCALSIZE[] = {{{plsizes}}};\n")
+        f.write(f"static const size_t {m}PLANAR_MULTIPOLESIZE[] = {{{pmsizes}}};\n")
+        f.write(f"static const size_t {m}PLANAR_LOCALSIZE[] = {{{plsizes}}};\n")
     f.write(header)
     f.close()
 

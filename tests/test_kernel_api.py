@@ -36,9 +36,10 @@ def test_generate_kernel_code_rejects_bad_options(tmp_path):
 
 
 def test_generate_code_delegates_to_the_kernel_generator(tmp_path):
-    fmmgen.generate_code(3, "yk", kernel=yukawa(0.7), language="c", src_dir=str(tmp_path),
+    fmmgen.generate_code(4, "yk", kernel=yukawa(0.7), language="c", src_dir=str(tmp_path),
                          include_dir=str(tmp_path))
     header = (tmp_path / "yk.h").read_text()
-    assert "M2L_3" in header and "FMMGEN_MAXORDER 3" in header
+    # order is exclusive, as for generate_code without a kernel: degrees 1..3, and FMMGEN_MAXORDER = 4
+    assert "M2L_3" in header and "M2L_4" not in header and "FMMGEN_MAXORDER 4" in header
     # minpow=0 (generate_code's default) means automatic for a kernel: no pow() calls in the operators
     assert "pow(" not in (tmp_path / "yk.c").read_text()

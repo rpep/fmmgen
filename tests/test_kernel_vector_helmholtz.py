@@ -171,7 +171,7 @@ def test_prefix_names_functions_and_macros(tmp_path):
     generate_kernel_code(power_law(1), 2, "lap", prefix="lap_", **kw)
     header = (tmp_path / "lap.h").read_text()
     assert "void lap_M2L_2(" in header and "void lap_P2P(" in header and "lap_P2P_batch(" in header
-    assert "#define FMMGEN_LAP_MAXORDER 2" in header and "#define FMMGEN_MAXORDER" not in header
+    assert "#define FMMGEN_LAP_MAXORDER 3" in header and "#define FMMGEN_MAXORDER" not in header
     assert "void M2L_2(" not in header
     with pytest.raises(ValueError, match="identifier"):
         generate_kernel_code(power_law(1), 2, "lap", prefix="bad-prefix", **kw)
