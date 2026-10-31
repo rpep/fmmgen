@@ -211,6 +211,26 @@ one can enable or disable optimisations, which affects the run time significantl
 some compilers. `examples/fortran` holds the same example in Fortran 90, which uses
 `language='fortran'` to generate its operators.
 
+### Faster generation and compilation
+
+Generating and compiling high orders is expensive: both grow by roughly 2x per order, and order 8
+takes tens of seconds for each step (timings vary a lot with the machine and compiler). Three
+backwards-compatible options of `generate_code` help, none of which change the generated
+operators:
+
+- `jobs=N` (0 for all CPUs) builds and prints the operators in parallel worker processes.
+- `split=True` writes each operator to its own file, `<name>_<operator>.cpp` (for example
+  `operators_M2L_8.cpp`), so `make -j` can compile them concurrently; `<name>.cpp` keeps only the order-dispatch wrappers.
+- `cache_dir` stores each order's generated text (JSON), so raising `order` only generates the new
+  orders. The default, `"auto"`, uses a private per-user directory in the system temporary
+  directory (`fmmgen-<uid>`); give a path to use another, or `None` to turn caching off.
+
+The generated operators are scalar straight-line code, so in our tests compiling them with `-O1`
+was noticeably quicker than `-O3` with no measurable change in run time. This may differ with
+your compiler, so check it on yours. `examples/Makefile` compiles the operators with `OPFLAGS`
+(`-O1` by default; set `OPFLAGS=${CXXFLAGS}` to use the same flags as everything else), and
+`make generate` uses all three options.
+
 In general, we do not recommend the use of the GNU compiler for this; in testing we find
 that the performance of the methods is significantly worse than when compiled with the
 Intel compiler. This has a side effect: we find that the symbolic algebra optimisations

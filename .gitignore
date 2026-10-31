@@ -28,3 +28,5 @@ operators.c
 *.s
 *.pyc
 junit/
+.claude/
+examples/.fmmgen_cache/

@@ -16,3 +16,15 @@ if platform.system() == "Darwin" and "CC" not in os.environ:
             os.environ["CC"] = gxx
             os.environ["CXX"] = gxx
             break
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _private_temp_dir(tmp_path, monkeypatch):
+    """The generation cache defaults to a directory under the system temp dir; give every
+    test its own so results never leak between tests or into the user's real cache."""
+    import tempfile
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))

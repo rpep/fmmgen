@@ -159,6 +159,492 @@ def _write_fortran(p, body, name, order, start, source_order, potential, field, 
         f.write("\n".join(out) + "\n")
 
 
+def _order_specs(i, cfg):
+    """Build the list of print jobs for expansion order ``i``.
+
+    Each job is ``(kind, name, LHS, RHS, inputs, kwargs)`` with ``kind`` either
+    ``"gen"`` (FunctionPrinter.generate) or ``"batch"``
+    (FunctionPrinter.generate_batch), in exactly the order the operators appear
+    in the generated files. This is the SymPy expression-building half of the
+    work; _run_spec is the CSE/printing half. They are split so both can be
+    farmed out to worker processes (generate_code's ``jobs`` option).
+    """
+    symbols = cfg["symbols"]
+    source_order = cfg["source_order"]
+    start = cfg["start"]
+    potential = cfg["potential"]
+    field = cfg["field"]
+    atomic = cfg["atomic"]
+    harmonic_derivs = cfg["harmonic_derivs"]
+    compress = cfg["compress"]
+    planar = cfg["planar"]
+    specs = []
+
+    def emit(name, LHS, RHS, inputs, **kw):
+        specs.append(("gen", name, LHS, RHS, list(inputs), kw))
+
+    def emit_batch(name, LHS, RHS, inputs, *args):
+        specs.append(("batch", name, LHS, RHS, list(inputs), {"args": args}))
+
+    M_dict, _ = generate_mappings(i, symbols, "grevlex", source_order=source_order)
+    L_dict, _ = generate_mappings(i - source_order, symbols, "grevlex", source_order=0)
+
+    source_size = Nterms(source_order) - Nterms(source_order - 1)
+    S2M = sp.Matrix(generate_S2M_operators(i, symbols, M_dict, source_order=source_order))
+
+    emit(
+        f"S2M_{i}",
+        "M",
+        S2M,
+        list(symbols) + [sp.MatrixSymbol("S", source_size, 1)],
+        operator="+=",
+        atomic=atomic,
+    )
+    Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
+
+    emit(
+        f"M2M_{i}",
+        "Ms",
+        Ms,
+        list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
+        operator="+=",
+        atomic=atomic,
+    )
+    # Two stages here; generate derivs and then the L matrix. Both
+    # must be passed to the function printer.
+    derivs = sp.Matrix(generate_derivs(i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs))
+    L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict, source_order=source_order))
+
+    emit(
+        f"M2L_{i}",
+        "L",
+        L,
+        list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
+        operator="+=",
+        atomic=atomic,
+        internal=[("D", derivs)],
+        # See generate_code's `horner` docstring: the M[i]*D[j]
+        # contraction has no coordinate polynomial left to factor, so
+        # Horner-forming it wastes time for no gain. D (built above,
+        # passed via `internal`) still gets Horner-formed as normal.
+        horner=False,
+    )
+
+    Ls = sp.Matrix(generate_L_shift_operators(i, symbols, L_dict, source_order=source_order))
+    emit(
+        f"L2L_{i}",
+        "Ls",
+        Ls,
+        list(symbols) + [sp.MatrixSymbol("L", Nterms(i), 1)],
+        operator="+=",
+        atomic=atomic,
+    )
+
+    L2P = generate_L2P_operators(i, symbols, L_dict, potential=potential, field=field)
+
+    Fs = sp.Matrix(L2P)
+    emit(
+        f"L2P_{i}",
+        "F",
+        Fs,
+        list(symbols) + [sp.MatrixSymbol("L", Nterms(i), 1)],
+        operator="+=",
+        atomic=atomic,
+    )
+
+    M2P = generate_M2P_operators(
+        i,
+        symbols,
+        M_dict,
+        potential=potential,
+        field=field,
+        source_order=source_order,
+        harmonic_derivs=harmonic_derivs,
+    )
+    Fs = sp.Matrix(M2P)
+    emit(
+        f"M2P_{i}",
+        "F",
+        Fs,
+        list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
+        operator="+=",
+        atomic=atomic,
+    )
+
+    # Compressed variant, emitted ALONGSIDE the above rather than instead
+    # of it. One header, one set of FMMGEN_* defines, nothing to include
+    # twice and no redefinition to manage -- and every line above is left
+    # untouched, so compress=False is byte-identical by construction rather
+    # than by inspection.
+    #
+    # P2P is deliberately not duplicated: it never touches an expansion, so
+    # the two variants would emit identical arithmetic.
+    #
+    # The uncompressed operator lists built above are handed straight in
+    # rather than rebuilt: compression is a linear map applied to them, so
+    # regenerating from sympy a second time is pure waste. Substitution
+    # uses xreplace, not subs -- these are exact atom-for-atom maps and
+    # need none of subs' pattern matching.
+    if compress:
+        # Separate retained sets: the multipole spans s <= |n| <= i while
+        # the local spans |m| <= i - s, so these are different index sets
+        # of different sizes whenever source_order > 0.
+        keep_M, keep_L, dec_M, dec_L = _keep_sets(i, symbols, M_dict, L_dict, source_order)
+        Mc = sp.MatrixSymbol("M", len(keep_M), 1)
+        Lc = sp.MatrixSymbol("L", len(keep_L), 1)
+
+        for nm, lhs, ops, inputs in (
+            ("S2Mc", "M",
+             generate_S2M_operators_compressed(i, symbols, M_dict, keep_M,
+                                               source_order=source_order, dec_M=dec_M,
+                                               ops=list(S2M)),
+             list(symbols) + [sp.MatrixSymbol("S", source_size, 1)]),
+            ("M2Mc", "Ms",
+             generate_M_shift_operators_compressed(i, symbols, M_dict, keep_M,
+                                                   source_order=source_order, dec_M=dec_M,
+                                                   ops=list(Ms)),
+             list(symbols) + [Mc]),
+            ("L2Lc", "Ls",
+             generate_L_shift_operators_compressed(i, symbols, L_dict, keep_L,
+                                                   source_order=source_order, dec_L=dec_L,
+                                                   ops=list(Ls)),
+             list(symbols) + [Lc]),
+            ("L2Pc", "F",
+             generate_L2P_operators_compressed(i, symbols, L_dict, keep_L,
+                                               potential=potential, field=field, dec_L=dec_L,
+                                               ops=list(L2P)),
+             list(symbols) + [Lc]),
+            ("M2Pc", "F",
+             generate_M2P_operators_compressed(i, symbols, M_dict, keep_M,
+                                               potential=potential, field=field,
+                                               source_order=source_order,
+                                               harmonic_derivs=harmonic_derivs,
+                                               ops=list(M2P)),
+             list(symbols) + [Mc]),
+        ):
+            emit(
+                f"{nm}_{i}", lhs, sp.Matrix(ops), inputs,
+                operator="+=", atomic=atomic,
+            )
+
+        # M2L returns its derivative array too: the compressed contraction
+        # only reaches derivatives with third index <= 2, so D is reindexed
+        # onto just those rather than emitted in full.
+        dv, L_ops = generate_M2L_compressed(
+            i, symbols, M_dict, L_dict, keep_M, keep_L,
+            source_order=source_order, harmonic_derivs=harmonic_derivs,
+            ops=list(L),
+        )
+        emit(
+            f"M2Lc_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mc],
+            operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
+            horner=False,
+        )
+
+    # Planar variant, emitted ALONGSIDE the above -- independent of, and
+    # freely combinable with, compress (see the planar docstring). Same
+    # "hand in the already-built uncompressed lists" pattern.
+    if planar:
+        keep_M, keep_L = _keep_sets_planar(i, symbols, source_order, field=field)
+        Mxy = sp.MatrixSymbol("M", len(keep_M), 1)
+        Lxy = sp.MatrixSymbol("L", len(keep_L), 1)
+
+        for nm, lhs, ops, inputs in (
+            ("S2Mxy", "M",
+             generate_S2M_operators_planar(i, symbols, M_dict, keep_M,
+                                           source_order=source_order,
+                                           ops=list(S2M)),
+             list(symbols) + [sp.MatrixSymbol("S", source_size, 1)]),
+            ("M2Mxy", "Ms",
+             generate_M_shift_operators_planar(i, symbols, M_dict, keep_M,
+                                               source_order=source_order,
+                                               ops=list(Ms)),
+             list(symbols) + [Mxy]),
+            ("L2Lxy", "Ls",
+             generate_L_shift_operators_planar(i, symbols, L_dict, keep_L,
+                                               source_order=source_order,
+                                               ops=list(Ls)),
+             list(symbols) + [Lxy]),
+            ("L2Pxy", "F",
+             generate_L2P_operators_planar(i, symbols, L_dict, keep_L,
+                                           potential=potential, field=field,
+                                           ops=list(L2P)),
+             list(symbols) + [Lxy]),
+            ("M2Pxy", "F",
+             generate_M2P_operators_planar(i, symbols, M_dict, keep_M,
+                                           potential=potential, field=field,
+                                           source_order=source_order,
+                                           harmonic_derivs=harmonic_derivs,
+                                           ops=list(M2P)),
+             list(symbols) + [Mxy]),
+        ):
+            emit(
+                f"{nm}_{i}", lhs, sp.Matrix(ops), inputs,
+                operator="+=", atomic=atomic,
+            )
+
+        dv, L_ops = generate_M2L_planar(
+            i, symbols, M_dict, L_dict, keep_M, keep_L,
+            source_order=source_order, harmonic_derivs=harmonic_derivs,
+            ops=list(L),
+        )
+        emit(
+            f"M2Lxy_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mxy],
+            operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
+            horner=False,
+        )
+
+    if i == start:
+        P2P = sp.Matrix(
+            generate_P2P_operators(
+                symbols,
+                M_dict,
+                potential=potential,
+                field=field,
+                source_order=source_order,
+            )
+        )
+
+        emit(
+            "P2P",
+            "F",
+            P2P,
+            list(symbols) + [sp.MatrixSymbol("S", Nterms(i), 1)],
+            operator="+=",
+            atomic=atomic,
+        )
+
+        # Batched form of the same operator: one target against a
+        # contiguous run of sources, inside an omp simd reduction loop.
+        # The per-pair P2P above cannot vectorise -- it is one call per
+        # interaction, across translation units -- and P2P is the dominant
+        # cost of the whole method at realistic particle counts.
+        emit_batch(
+            "P2P_batch",
+            "F",
+            P2P,
+            [str(sym) for sym in symbols],
+            Nterms(source_order) - Nterms(source_order - 1),
+        )
+
+        # Planar P2P: both particles confined to z=0. Unlike the other
+        # planar operators there is no array to lift/restrict (P2P reads
+        # the caller's raw source array directly, sized by source_order
+        # alone), so this is z=0 substituted into the already-built P2P
+        # expressions -- same output size (Fz is not dropped: it is only
+        # provably zero at source_order=0, see generate_P2P_operators_planar)
+        # -- and, for the batched form, genuinely 2 position arguments
+        # rather than 3 with a zero padded in, since the batch kernel's
+        # source-coordinate arrays are declared directly from the symbol
+        # list handed to generate_batch.
+        if planar:
+            P2Pxy = sp.Matrix(
+                generate_P2P_operators_planar(
+                    symbols, M_dict, potential=potential, field=field,
+                    source_order=source_order, ops=list(P2P),
+                )
+            )
+            emit(
+                "P2Pxy", "F", P2Pxy,
+                list(symbols)[:2] + [sp.MatrixSymbol("S", Nterms(i), 1)],
+                operator="+=", atomic=atomic,
+            )
+
+            emit_batch(
+                "P2P_batchxy", "F", P2Pxy,
+                [str(sym) for sym in symbols[:2]],
+                Nterms(source_order) - Nterms(source_order - 1),
+            )
+
+    return specs
+
+
+
+def _run_spec(p, spec):
+    """CSE and print one operator job built by _order_specs."""
+    kind, name, LHS, RHS, inputs, kw = spec
+    if kind == "batch":
+        head, code, n = p.generate_batch(name, LHS, RHS, inputs, *kw["args"])
+    else:
+        head, code, n = p.generate(name, LHS, RHS, inputs, **kw)
+    return kind, name, head, code, n
+
+
+# Per-process printer for the worker pool, built once by _init_worker.
+_WORKER_PRINTER = None
+
+
+def _init_worker(printer_kwargs):
+    global _WORKER_PRINTER
+    _WORKER_PRINTER = FunctionPrinter(**printer_kwargs)
+
+
+def _build_order(i, cfg):
+    """Pool task: expression building for one order, plus a crude cost estimate
+    per job (rows x free symbols) used only to submit the big jobs first."""
+    specs = _order_specs(i, cfg)
+    cost = [len(s[3]) * (1 + len(s[3].free_symbols)) for s in specs]
+    return specs, cost
+
+
+def _print_spec(spec):
+    return _run_spec(_WORKER_PRINTER, spec)
+
+
+def _cache_key(i, cfg, printer_kwargs):
+    """Hash of everything that can change the text generated for order i."""
+    import hashlib
+    import os
+
+    h = hashlib.sha256()
+    pkg = os.path.dirname(os.path.abspath(__file__))
+    for fn in sorted(os.listdir(pkg)):
+        if fn.endswith(".py"):
+            with open(os.path.join(pkg, fn), "rb") as fh:
+                h.update(fh.read())
+    h.update(sp.__version__.encode())
+    c = {k: v for k, v in cfg.items() if k != "symbols"}
+    h.update(repr((i, sorted(c.items()), sorted(printer_kwargs.items()))).encode())
+    return h.hexdigest()[:32]
+
+
+def _resolve_cache_dir(cache_dir):
+    """None/False -> no cache; "auto" -> a private per-user directory in the temp dir; else as given."""
+    import os
+    import tempfile
+
+    if not cache_dir:
+        return None
+    if cache_dir != "auto":
+        return cache_dir
+    uid = os.getuid() if hasattr(os, "getuid") else "user"
+    path = os.path.join(tempfile.gettempdir(), f"fmmgen-{uid}")
+    try:
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        if hasattr(os, "getuid"):
+            st = os.stat(path)
+            if st.st_uid != os.getuid() or st.st_mode & 0o022:
+                raise PermissionError("not private to this user")
+    except OSError as e:
+        logger.warning(f"Not using the generation cache in {path}: {e}")
+        return None
+    return path
+
+
+def _generate_all(p, printer_kwargs, orders, cfg, jobs, cache_dir):
+    """Return {order: [(kind, name, header, code, opscount), ...]}.
+
+    jobs == 1 runs everything in this process, one order at a time (the
+    original behaviour). jobs > 1 (or 0 for all CPUs) builds the expressions
+    of every order in a pool and prints (CSE + C text) every operator as a
+    separate pool task, so a handful of big operators no longer serialise the
+    run. Output is identical either way: nothing in the text depends on the
+    process that produced it.
+
+    cache_dir, if given, stores the result for each order under a key built
+    from the fmmgen sources, the SymPy version and every option affecting the
+    text, so raising ``order`` only generates the new orders.
+    """
+    import json
+    import os
+
+    cache_dir = _resolve_cache_dir(cache_dir)
+    if jobs == 0:
+        jobs = os.cpu_count() or 1
+    results = {}
+    todo = []
+    keys = {}
+    for i in orders:
+        if cache_dir:
+            os.makedirs(cache_dir, exist_ok=True)
+            keys[i] = os.path.join(cache_dir, f"order{i}_{_cache_key(i, cfg, printer_kwargs)}.json")
+            try:
+                with open(keys[i]) as fh:
+                    results[i] = [tuple(r) for r in json.load(fh)]
+                logger.info(f"Order {i}: loaded from cache")
+                continue
+            except (OSError, ValueError):
+                pass  # missing or unreadable: regenerate
+        todo.append(i)
+
+    if jobs <= 1 or len(todo) == 0:
+        for i in todo:
+            results[i] = [_run_spec(p, s) for s in _order_specs(i, cfg)]
+    else:
+        import multiprocessing as mp
+        import threading
+
+        ctx = mp.get_context("fork") if "fork" in mp.get_all_start_methods() else mp.get_context()
+        lock = threading.Lock()
+        printed = {}
+
+        with ctx.Pool(jobs, initializer=_init_worker, initargs=(printer_kwargs,)) as pool:
+
+            def submit(i, built):
+                specs, cost = built
+                ranked = sorted(range(len(specs)), key=lambda k: -cost[k])
+                futs = {k: pool.apply_async(_print_spec, (specs[k],)) for k in ranked}
+                with lock:
+                    printed[i] = [futs[k] for k in range(len(specs))]
+
+            # Largest orders first: they have the longest build and print tails.
+            builds = [
+                pool.apply_async(_build_order, (i, cfg), callback=lambda built, i=i: submit(i, built))
+                for i in sorted(todo, reverse=True)
+            ]
+            for b in builds:
+                b.get()
+            for i in todo:
+                results[i] = [f.get() for f in printed[i]]
+
+    if cache_dir:
+        for i in todo:
+            tmp = f"{keys[i]}.{os.getpid()}.tmp"
+            with open(tmp, "w") as fh:
+                json.dump(results[i], fh)
+            os.replace(tmp, keys[i])  # atomic: a concurrent run never reads a half-written file
+    return results
+
+
+_OPERATOR_FILE = r"(?:S2M|M2M|M2L|L2L|L2P|M2P|P2P)\w*"
+
+
+def _write_sources(path_for, name, hext, fext, language, chunks, wrappers, split):
+    """Write the C/C++ implementation file(s).
+
+    chunks is a list of (operator name, code). split false: everything in
+    {name}.{fext}, as before. split true: {name}.{fext} keeps only the
+    order-dispatch wrappers and each operator gets its own file,
+    {name}_{operator}.{fext} (for example {name}_M2L_8.{fext}), so a build can
+    compile them in parallel and each compiler process only sees one function.
+    """
+    import glob
+    import os
+    import re
+
+    prelude = f'#include "{name}.{hext}"\n'
+    prelude += '#include "math.h"\n' if language == "c" else "#include<cmath>\n"
+    stem = path_for(name)[: -len(f".{fext}")]
+    # Per-operator files from an earlier split run (or the old _partN files)
+    # would be compiled by a *.cpp glob and define every operator twice.
+    stale = re.compile(re.escape(os.path.basename(stem)) + rf"_(?:{_OPERATOR_FILE}|part\d+)\.{re.escape(fext)}")
+    for old in glob.glob(f"{glob.escape(stem)}_*.{fext}"):
+        if stale.fullmatch(os.path.basename(old)):
+            os.remove(old)
+    if not split:
+        with open(path_for(name), "w") as f:
+            f.write(prelude + "".join(code for _, code in chunks) + wrappers)
+        return
+    names = [op for op, _ in chunks]
+    if len(set(names)) != len(names):
+        raise ValueError("operator names are not unique, cannot write one file per operator")
+    with open(path_for(name), "w") as f:
+        f.write(prelude + wrappers)
+    for op, code in chunks:
+        with open(path_for(f"{name}_{op}"), "w") as f:
+            f.write(prelude + code)
+
+
 def generate_code(
     order,
     name,
@@ -179,6 +665,9 @@ def generate_code(
     horner=False,
     language="c",
     save_opscounts=None,
+    jobs=1,
+    split=False,
+    cache_dir="auto",
 ):
     """
     Inputs:
@@ -313,6 +802,32 @@ def generate_code(
 
     save_opcounts, string:
         Filename to save opcounts in
+
+    jobs, int:
+        Worker processes used for SymPy expression building and CSE/printing.
+        1 (default) is the original serial path; 0 means one per CPU. Each
+        operator is printed as its own task, so the output text is identical
+        to jobs=1. Ignored (with a warning) for language='fortran'. Gains are
+        limited by physical cores and by SymPy's per-process caches being
+        cold in each worker, so expect well under linear scaling.
+
+    split, bool:
+        False (default) writes everything to {name}.{cpp,c} as before. True
+        writes each operator to its own file, {name}_{operator}.{cpp,c} (for
+        example {name}_M2L_8.cpp), and leaves only the order-dispatch wrappers
+        in {name}.{cpp,c}, so a parallel make can compile the straight-line
+        operators concurrently. Per-operator files from an earlier run are
+        removed first. Not available with cython or fortran.
+
+    cache_dir, str:
+        Ignored for language='fortran'. "auto" (default) uses a private per-user directory under the system
+        temporary directory (fmmgen-<uid>, mode 0700; it is ignored with a
+        warning if it is owned by someone else or writable by others). None or
+        False turns the cache off. The generated text for each order is stored there, keyed on
+        the fmmgen sources, the SymPy version and every option that affects
+        the output; a later run (for example one that raises ``order``) only
+        generates the orders it has not seen. Delete the directory to
+        invalidate.
     """
     if save_opscounts:
         f = open(save_opscounts, "w")
@@ -379,328 +894,51 @@ def generate_code(
         # leave it as a simple symbolic derivative.
         start += 1
 
-    for i in range(start, order):
+    cfg = dict(
+        symbols=symbols,
+        source_order=source_order,
+        start=start,
+        potential=potential,
+        field=field,
+        atomic=atomic,
+        harmonic_derivs=harmonic_derivs,
+        compress=compress,
+        planar=planar,
+    )
+    orders = list(range(start, order))
+    printer_kwargs = dict(language=language, precision=precision, debug=not CSE, minpow=minpow, horner=horner)
+    if language == "fortran" and jobs != 1:
+        # The Fortran printer records each routine's argument list on the
+        # printer object itself (see FunctionPrinter.signatures), which
+        # worker processes cannot hand back. Stay serial rather than guess.
+        logger.warning("jobs is ignored for language='fortran'")
+        jobs = 1
+    if language == "fortran" and cache_dir:
+        # The Fortran writer needs every routine's signature from the printer, and a cache hit
+        # skips the printer. Fortran always generates.
+        if cache_dir != "auto":
+            logger.warning("cache_dir is ignored for language='fortran'")
+        cache_dir = None
+    if split and (cython or language == "fortran"):
+        raise NotImplementedError("split is only supported for plain C/C++ output (no cython, no fortran)")
+    results = _generate_all(p, printer_kwargs, orders, cfg, jobs, cache_dir)
+
+    chunks = []
+    for i in orders:
         print(f"Generating Order {i} operators")
-        M_dict, _ = generate_mappings(i, symbols, "grevlex", source_order=source_order)
-        L_dict, _ = generate_mappings(i - source_order, symbols, "grevlex", source_order=0)
-
-        source_size = Nterms(source_order) - Nterms(source_order - 1)
-        S2M = sp.Matrix(generate_S2M_operators(i, symbols, M_dict, source_order=source_order))
-
-        head, code, S2M_opscount = p.generate(
-            f"S2M_{i}",
-            "M",
-            S2M,
-            list(symbols) + [sp.MatrixSymbol("S", source_size, 1)],
-            operator="+=",
-            atomic=atomic,
-        )
-        print(f"S2M_{i} opscount = {S2M_opscount}")
-        header += head
-        body += code + "\n"
-        Ms = sp.Matrix(generate_M_shift_operators(i, symbols, M_dict, source_order=source_order))
-
-        head, code, M2M_opscount = p.generate(
-            f"M2M_{i}",
-            "Ms",
-            Ms,
-            list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
-            operator="+=",
-            atomic=atomic,
-        )
-        header += head
-        body += code + "\n"
-        print(f"M2M_{i} opscount = {M2M_opscount}")
-        # Two stages here; generate derivs and then the L matrix. Both
-        # must be passed to the function printer.
-        derivs = sp.Matrix(generate_derivs(i, symbols, M_dict, source_order, harmonic_derivs=harmonic_derivs))
-        L = sp.Matrix(generate_L_operators(i, symbols, M_dict, L_dict, source_order=source_order))
-
-        head, code, M2L_opscount = p.generate(
-            f"M2L_{i}",
-            "L",
-            L,
-            list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
-            operator="+=",
-            atomic=atomic,
-            internal=[("D", derivs)],
-            # See generate_code's `horner` docstring: the M[i]*D[j]
-            # contraction has no coordinate polynomial left to factor, so
-            # Horner-forming it wastes time for no gain. D (built above,
-            # passed via `internal`) still gets Horner-formed as normal.
-            horner=False,
-        )
-        header += head
-        body += code + "\n"
-        print(f"M2L_{i} opscount = {M2L_opscount}")
-
-        Ls = sp.Matrix(generate_L_shift_operators(i, symbols, L_dict, source_order=source_order))
-        head, code, L2L_opscount = p.generate(
-            f"L2L_{i}",
-            "Ls",
-            Ls,
-            list(symbols) + [sp.MatrixSymbol("L", Nterms(i), 1)],
-            operator="+=",
-            atomic=atomic,
-        )
-
-        header += head
-        body += code + "\n"
-        print(f"L2L_{i} opscount = {L2L_opscount}")
-        L2P = generate_L2P_operators(i, symbols, L_dict, potential=potential, field=field)
-
-        Fs = sp.Matrix(L2P)
-        head, code, L2P_opscount = p.generate(
-            f"L2P_{i}",
-            "F",
-            Fs,
-            list(symbols) + [sp.MatrixSymbol("L", Nterms(i), 1)],
-            operator="+=",
-            atomic=atomic,
-        )
-
-        header += head
-        body += code + "\n"
-        print(f"L2P_{i} opscount = {L2P_opscount}")
-        M2P = generate_M2P_operators(
-            i,
-            symbols,
-            M_dict,
-            potential=potential,
-            field=field,
-            source_order=source_order,
-            harmonic_derivs=harmonic_derivs,
-        )
-        Fs = sp.Matrix(M2P)
-        head, code, M2P_opscount = p.generate(
-            f"M2P_{i}",
-            "F",
-            Fs,
-            list(symbols) + [sp.MatrixSymbol("M", Nterms(i), 1)],
-            operator="+=",
-            atomic=atomic,
-        )
-        header += head
-        body += code + "\n"
-        print(f"M2P_{i} opscount = {M2P_opscount}")
-
-        # Compressed variant, emitted ALONGSIDE the above rather than instead
-        # of it. One header, one set of FMMGEN_* defines, nothing to include
-        # twice and no redefinition to manage -- and every line above is left
-        # untouched, so compress=False is byte-identical by construction rather
-        # than by inspection.
-        #
-        # P2P is deliberately not duplicated: it never touches an expansion, so
-        # the two variants would emit identical arithmetic.
-        #
-        # The uncompressed operator lists built above are handed straight in
-        # rather than rebuilt: compression is a linear map applied to them, so
-        # regenerating from sympy a second time is pure waste. Substitution
-        # uses xreplace, not subs -- these are exact atom-for-atom maps and
-        # need none of subs' pattern matching.
-        if compress:
-            # Separate retained sets: the multipole spans s <= |n| <= i while
-            # the local spans |m| <= i - s, so these are different index sets
-            # of different sizes whenever source_order > 0.
-            keep_M, keep_L, dec_M, dec_L = _keep_sets(i, symbols, M_dict, L_dict, source_order)
-            Mc = sp.MatrixSymbol("M", len(keep_M), 1)
-            Lc = sp.MatrixSymbol("L", len(keep_L), 1)
-
-            for nm, lhs, ops, inputs in (
-                ("S2Mc", "M",
-                 generate_S2M_operators_compressed(i, symbols, M_dict, keep_M,
-                                                   source_order=source_order, dec_M=dec_M,
-                                                   ops=list(S2M)),
-                 list(symbols) + [sp.MatrixSymbol("S", source_size, 1)]),
-                ("M2Mc", "Ms",
-                 generate_M_shift_operators_compressed(i, symbols, M_dict, keep_M,
-                                                       source_order=source_order, dec_M=dec_M,
-                                                       ops=list(Ms)),
-                 list(symbols) + [Mc]),
-                ("L2Lc", "Ls",
-                 generate_L_shift_operators_compressed(i, symbols, L_dict, keep_L,
-                                                       source_order=source_order, dec_L=dec_L,
-                                                       ops=list(Ls)),
-                 list(symbols) + [Lc]),
-                ("L2Pc", "F",
-                 generate_L2P_operators_compressed(i, symbols, L_dict, keep_L,
-                                                   potential=potential, field=field, dec_L=dec_L,
-                                                   ops=list(L2P)),
-                 list(symbols) + [Lc]),
-                ("M2Pc", "F",
-                 generate_M2P_operators_compressed(i, symbols, M_dict, keep_M,
-                                                   potential=potential, field=field,
-                                                   source_order=source_order,
-                                                   harmonic_derivs=harmonic_derivs,
-                                                   ops=list(M2P)),
-                 list(symbols) + [Mc]),
-            ):
-                head, code, n = p.generate(
-                    f"{nm}_{i}", lhs, sp.Matrix(ops), inputs,
-                    operator="+=", atomic=atomic,
-                )
-                header += head
-                body += code + "\n"
-                print(f"{nm}_{i} opscount = {n}")
-
-            # M2L returns its derivative array too: the compressed contraction
-            # only reaches derivatives with third index <= 2, so D is reindexed
-            # onto just those rather than emitted in full.
-            dv, L_ops = generate_M2L_compressed(
-                i, symbols, M_dict, L_dict, keep_M, keep_L,
-                source_order=source_order, harmonic_derivs=harmonic_derivs,
-                ops=list(L),
-            )
-            head, code, n = p.generate(
-                f"M2Lc_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mc],
-                operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
-                horner=False,
-            )
+        counts = {}
+        for kind, opname, head, code, n in results[i]:
             header += head
-            body += code + "\n"
-            print(f"M2Lc_{i} opscount = {n}")
-
-        # Planar variant, emitted ALONGSIDE the above -- independent of, and
-        # freely combinable with, compress (see the planar docstring). Same
-        # "hand in the already-built uncompressed lists" pattern.
-        if planar:
-            keep_M, keep_L = _keep_sets_planar(i, symbols, source_order, field=field)
-            Mxy = sp.MatrixSymbol("M", len(keep_M), 1)
-            Lxy = sp.MatrixSymbol("L", len(keep_L), 1)
-
-            for nm, lhs, ops, inputs in (
-                ("S2Mxy", "M",
-                 generate_S2M_operators_planar(i, symbols, M_dict, keep_M,
-                                               source_order=source_order,
-                                               ops=list(S2M)),
-                 list(symbols) + [sp.MatrixSymbol("S", source_size, 1)]),
-                ("M2Mxy", "Ms",
-                 generate_M_shift_operators_planar(i, symbols, M_dict, keep_M,
-                                                   source_order=source_order,
-                                                   ops=list(Ms)),
-                 list(symbols) + [Mxy]),
-                ("L2Lxy", "Ls",
-                 generate_L_shift_operators_planar(i, symbols, L_dict, keep_L,
-                                                   source_order=source_order,
-                                                   ops=list(Ls)),
-                 list(symbols) + [Lxy]),
-                ("L2Pxy", "F",
-                 generate_L2P_operators_planar(i, symbols, L_dict, keep_L,
-                                               potential=potential, field=field,
-                                               ops=list(L2P)),
-                 list(symbols) + [Lxy]),
-                ("M2Pxy", "F",
-                 generate_M2P_operators_planar(i, symbols, M_dict, keep_M,
-                                               potential=potential, field=field,
-                                               source_order=source_order,
-                                               harmonic_derivs=harmonic_derivs,
-                                               ops=list(M2P)),
-                 list(symbols) + [Mxy]),
-            ):
-                head, code, n = p.generate(
-                    f"{nm}_{i}", lhs, sp.Matrix(ops), inputs,
-                    operator="+=", atomic=atomic,
-                )
-                header += head
-                body += code + "\n"
-                print(f"{nm}_{i} opscount = {n}")
-
-            dv, L_ops = generate_M2L_planar(
-                i, symbols, M_dict, L_dict, keep_M, keep_L,
-                source_order=source_order, harmonic_derivs=harmonic_derivs,
-                ops=list(L),
-            )
-            head, code, n = p.generate(
-                f"M2Lxy_{i}", "L", sp.Matrix(L_ops), list(symbols) + [Mxy],
-                operator="+=", atomic=atomic, internal=[("D", sp.Matrix(dv))],
-                horner=False,
-            )
-            header += head
-            body += code + "\n"
-            print(f"M2Lxy_{i} opscount = {n}")
-
-        if i == start:
-            P2P = sp.Matrix(
-                generate_P2P_operators(
-                    symbols,
-                    M_dict,
-                    potential=potential,
-                    field=field,
-                    source_order=source_order,
-                )
-            )
-
-            head, code, P2P_opscount = p.generate(
-                "P2P",
-                "F",
-                P2P,
-                list(symbols) + [sp.MatrixSymbol("S", Nterms(i), 1)],
-                operator="+=",
-                atomic=atomic,
-            )
-            print(f"P2P opscount = {P2P_opscount}")
-            header += head
-            body += code + "\n"
-
-            # Batched form of the same operator: one target against a
-            # contiguous run of sources, inside an omp simd reduction loop.
-            # The per-pair P2P above cannot vectorise -- it is one call per
-            # interaction, across translation units -- and P2P is the dominant
-            # cost of the whole method at realistic particle counts.
-            head, code, _ = p.generate_batch(
-                "P2P_batch",
-                "F",
-                P2P,
-                [str(sym) for sym in symbols],
-                Nterms(source_order) - Nterms(source_order - 1),
-            )
-            header += head
-            body += code + "\n"
-
-            # Planar P2P: both particles confined to z=0. Unlike the other
-            # planar operators there is no array to lift/restrict (P2P reads
-            # the caller's raw source array directly, sized by source_order
-            # alone), so this is z=0 substituted into the already-built P2P
-            # expressions -- same output size (Fz is not dropped: it is only
-            # provably zero at source_order=0, see generate_P2P_operators_planar)
-            # -- and, for the batched form, genuinely 2 position arguments
-            # rather than 3 with a zero padded in, since the batch kernel's
-            # source-coordinate arrays are declared directly from the symbol
-            # list handed to generate_batch.
-            if planar:
-                P2Pxy = sp.Matrix(
-                    generate_P2P_operators_planar(
-                        symbols, M_dict, potential=potential, field=field,
-                        source_order=source_order, ops=list(P2P),
-                    )
-                )
-                head, code, P2Pxy_opscount = p.generate(
-                    "P2Pxy", "F", P2Pxy,
-                    list(symbols)[:2] + [sp.MatrixSymbol("S", Nterms(i), 1)],
-                    operator="+=", atomic=atomic,
-                )
-                print(f"P2Pxy opscount = {P2Pxy_opscount}")
-                header += head
-                body += code + "\n"
-
-                head, code, _ = p.generate_batch(
-                    "P2P_batchxy", "F", P2Pxy,
-                    [str(sym) for sym in symbols[:2]],
-                    Nterms(source_order) - Nterms(source_order - 1),
-                )
-                header += head
-                body += code + "\n"
-
+            chunks.append((opname, code + "\n"))
+            if kind == "gen":
+                print(f"{opname} opscount = {n}")
+            counts[opname] = n
         if save_opscounts:
             if i == start:
-                f.write(f"P2P,{P2P_opscount}\n")
-            f.write(f"S2M_{i},{S2M_opscount}\n")
-            f.write(f"M2M_{i},{M2M_opscount}\n")
-            f.write(f"M2L_{i},{M2L_opscount}\n")
-            f.write(f"L2P_{i},{L2P_opscount}\n")
-            f.write(f"L2L_{i},{L2L_opscount}\n")
-            f.write(f"M2P_{i},{M2P_opscount}\n")
-
+                f.write(f"P2P,{counts['P2P']}\n")
+            for stem in ("S2M", "M2M", "M2L", "L2P", "L2L", "M2P"):
+                f.write(f"{stem}_{i},{counts[f'{stem}_{i}']}\n")
+    body = "".join(code for _, code in chunks)
     if language == "fortran":
         _write_fortran(p, body, name, order, start, source_order, potential, field,
                        compress, planar, src_dir or include_dir)
@@ -731,6 +969,7 @@ def generate_code(
     func_definitions += wrapper_funcs
     # print('\n'.join(func_definitions))
 
+    wrappers = ""
     for wfunc, func in zip(wrapper_funcs, unique_funcs):
         # Add to header file
         header += wfunc + ";\n"
@@ -750,7 +989,7 @@ def generate_code(
             code += "  case {}:\n".format(i)
             code += f"    {stem}_{i}({args});\n    break;\n"
         code += "  }\n}\n"
-        body += code
+        wrappers += code
 
     if not include_dir:
         f = open(f"{name}.{hext}", "w")
@@ -813,19 +1052,12 @@ def generate_code(
     f.write(header)
     f.close()
 
-    if not src_dir:
-        f = open(f"{name}.{fext}", "w")
-    else:
-        f = open(f"{src_dir.rstrip('/')}/{name}.{fext}", "w")
+    def _src_path(stem):
+        if not src_dir:
+            return f"{stem}.{fext}"
+        return f"{src_dir.rstrip('/')}/{stem}.{fext}"
 
-    f.write(f'#include "{name}.{hext}"\n')
-    if language == "c":
-        f.write('#include "math.h"\n')
-    elif language == "c++":
-        f.write("#include<cmath>\n")
-
-    f.write(body)
-    f.close()
+    _write_sources(_src_path, name, hext, fext, language, chunks, wrappers, split)
 
     if cython and gpu:
         raise Warning("Cannot write a Cython wrapper for GPU code; skipping")
