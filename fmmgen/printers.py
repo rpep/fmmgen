@@ -105,6 +105,40 @@ class FortranCodePrinter(FBase):
         # literals everywhere also rule out integer division.
         return f"{int(expr)}.0d0"
 
+    def _print_Float(self, expr):
+        # Kernels that carry extra-precision coefficients (see _stable_erf_derivs) would
+        # print 60-digit literals, which are wasted past double precision and which the
+        # statement writer may wrap in the middle of the exponent.
+        if expr._prec <= 53:
+            return super()._print_Float(expr)
+        text = str(sp.Float(expr, 17))
+        return text.replace("e", "d") if "e" in text else text + "d0"
+
+    def _print_NumberSymbol(self, expr):
+        # Stock sympy declares `parameter (pi = ...)` ahead of the statement, which
+        # cannot sit inside an expression: print the constant as a literal instead.
+        return f"{sp.Float(expr, 17)}d0"
+
+    def _print_Relational(self, expr):
+        # CSE hoists conditions into temporaries, and every temporary is declared real:
+        # a comparison on its own is a real 0/1, and _condition turns it back into a logical.
+        return f"merge(1.0d0, 0.0d0, {super()._print_Relational(expr)})"
+
+    def _condition(self, cond):
+        if isinstance(cond, sp.core.relational.Relational):
+            return super()._print_Relational(cond)
+        return f"({self._print(cond)} /= 0.0d0)"
+
+    def _print_Piecewise(self, expr):
+        # Inline conditionals are an F95 construct in stock sympy; MERGE is F90.
+        # Both branches are evaluated (as with any F90 MERGE), so every branch
+        # must be finite wherever it is not selected.
+        (value, cond), rest = expr.args[0], expr.args[1:]
+        if cond is sp.true or not rest:
+            return self._print(value)
+        other = self._print_Piecewise(sp.Piecewise(*rest)) if len(rest) > 1 else self._print(rest[0][0])
+        return f"merge({self._print(value)}, {other}, {self._condition(cond)})"
+
     def _print_MatrixElement(self, expr):
         name = self._print(expr.parent)
         rows, cols = expr.parent.shape
