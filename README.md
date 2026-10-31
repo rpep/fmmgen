@@ -238,6 +238,43 @@ have less of an effect on performance with the Intel compiler, which can factor
 expressions more effectively to avoid repeated computations than the GNU compiler at
 high optimisation levels.
 
+## Other kernels
+
+fmmgen is not limited to the Laplace kernel. Describe any translation-invariant kernel with
+`fmmgen.Kernel` and pass it to `generate_code` (or call `fmmgen.kernel.generate_kernel_code`
+directly to choose individual orders):
+
+```python
+import sympy as sp
+from fmmgen import generate_code
+from fmmgen.kernel import Kernel, power_law, lennard_jones
+
+x, y, z, k = sp.symbols("x y z k")
+r = sp.sqrt(x**2 + y**2 + z**2)
+laplace = {(2, 0, 0): 1, (0, 2, 0): 1, (0, 0, 2): 1}
+
+yukawa = Kernel(sp.exp(-k * r) / r, (x, y, z), params={"k": 0.7},
+                pde={**laplace, (0, 0, 0): -k**2})      # pde is optional
+generate_code(6, "yukawa", kernel=yukawa, CSE=True)      # yukawa.h / yukawa.c
+
+# dipole sources of a dispersion kernel (integer powers are printed as multiplications)
+from fmmgen.kernel import generate_kernel_code
+generate_kernel_code(power_law(6), 8, "disp", source_order=1)
+```
+
+This emits S2M, M2M, M2L, L2L, L2P, M2P, P2P and P2P_batch, in 1 to 3 dimensions, in C, C++ or
+Fortran 90, with the same array layout as the Laplace operators. Sources of order `source_order`
+(0 charges, 1 dipoles, 2 quadrupoles, ...) have potential sum_m S_m d^m G(x - y) over the
+multi-indices of that order, derived from the kernel's derivative tensor for any kernel. M2M and L2L
+are kernel-independent Taylor shifts. The kernel enters only through the derivative tensor, which is
+evaluated by a recurrence in r^2 for radial kernels (no symbolic differentiation of the full kernel),
+or by `sp.diff` for non-radial ones. A `pde=` dictionary lets Laplace-, Helmholtz-, Yukawa- and
+biharmonic-type kernels get the higher derivatives from lower ones, and a `derivs=` callable replaces
+the derivative scheme entirely. `fmmgen.kernel` also ships power laws, Lennard-Jones, Morse,
+Buckingham, `erfc(a r)/r`, `erf(a r)/r`, Yukawa and softened gravity.
+
+Kernel parameters are baked in at generation time.
+
 ## References
 
 The code was developed with particular reference to the following academic papers.
