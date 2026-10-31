@@ -149,8 +149,6 @@ def test_low_rank_lj_weights_match_exact_pair_coefficient():
     assert comp.nchannels < exact.nchannels
     rng = np.random.default_rng(1)
     th = np.column_stack([rng.uniform(0.02, 0.25, 40), rng.uniform(2.5, 4.0, 40)])
-    for sk in (exact, comp):
-        pass
     for g in (0, 1):
         # same exponent groups in the same order (12 then 6)
         a_e, b_e = exact.target_weights(g, th), exact.source_weights(g, th)
@@ -177,3 +175,25 @@ def test_fortran_groups_are_separate_modules(tmp_path):
     files = sorted(p.name for p in tmp_path.glob("lj_g*.f90"))
     assert len(files) == 2
     subprocess.run(["gfortran", "-std=f2008", "-c", *files], cwd=tmp_path, check=True, capture_output=True)
+
+
+@pytest.mark.parametrize("nsamples", [60, 900])  # 900 distinct values takes the quantile-grid branch
+def test_low_rank_from_sampled_sigma_and_fixed_ranks(nsamples):
+    from fmmgen.separable import low_rank_sigma_factors
+
+    sig = np.random.default_rng(3).uniform(2.5, 4.0, nsamples)
+    exact = ((sig[:, None] + sig[None, :]) / 2) ** 6
+    fa, gb, rank, err = low_rank_sigma_factors(6, sigma_sample=sig, tol=1e-5, method="svd")
+    assert err < 1e-5 and rank < 7
+    assert np.max(np.abs(fa(sig) @ gb(sig).T - exact) / exact) < 1e-4  # the samples themselves
+    sk = SeparableKernel.lennard_jones_lowrank(sigma_sample=sig, ranks=(5, 3))
+    assert sk.compression[12][0] == 5 and sk.compression[6][0] == 3 and sk.nchannels == 8
+
+
+def test_bad_mixing_and_method_are_rejected():
+    from fmmgen.separable import low_rank_sigma_factors
+
+    with pytest.raises(ValueError, match="mixing"):
+        SeparableKernel.lennard_jones("arithmetic")
+    with pytest.raises(ValueError, match="method"):
+        low_rank_sigma_factors(6, sigma_range=(2.5, 4.0), method="qr")
