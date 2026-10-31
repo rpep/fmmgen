@@ -255,7 +255,7 @@ laplace = {(2, 0, 0): 1, (0, 2, 0): 1, (0, 0, 2): 1}
 
 yukawa = Kernel(sp.exp(-k * r) / r, (x, y, z), params={"k": 0.7},
                 pde={**laplace, (0, 0, 0): -k**2})      # pde is optional
-generate_code(6, "yukawa", kernel=yukawa, CSE=True)      # yukawa.h / yukawa.c
+generate_code(6, "yukawa", kernel=yukawa, CSE=True)      # orders 1..5: yukawa.h / yukawa.c
 
 # dipole sources of a dispersion kernel (integer powers are printed as multiplications)
 from fmmgen.kernel import generate_kernel_code
