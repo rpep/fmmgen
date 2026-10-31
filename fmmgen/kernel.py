@@ -58,7 +58,7 @@ from .printers import FunctionPrinter
 
 __all__ = ["Kernel", "generate_kernel_code", "multi_indices", "Dref", "derivative_layers",
            "numeric_derivative_tensor", "power_law", "lennard_jones", "morse", "buckingham", "ewald_real",
-           "gaussian_screened_coulomb", "softened_power", "yukawa"]
+           "gaussian_screened_coulomb", "softened_power", "yukawa", "helmholtz_cos", "helmholtz_sin"]
 
 R = sp.Symbol("R")  # plain symbol: the printer defines it when it sees it
 _Rpos = sp.Symbol("R", positive=True)
@@ -147,6 +147,14 @@ class Kernel:
     radial profile g(R) is then available as `.profile` and enables the
     "taylor" method and a cheap closed-form P2P field.
     """
+
+    def __new__(cls, expr=None, *args, **kw):
+        # an array-valued expression (numpy object array, nested list/tuple, sympy Array) is a tensor kernel
+        if cls is Kernel and (isinstance(expr, (list, tuple, sp.Array)) or getattr(expr, "ndim", 0) > 0):
+            from .vector import VectorKernel
+
+            return VectorKernel(expr, *args, **kw)
+        return super().__new__(cls)
 
     def __init__(self, expr, variables=None, params=None, pde=None, derivs=None, method="auto", name=None,
                  radial_derivs=None):
@@ -786,6 +794,7 @@ def generate_kernel_code(
     report=None,
     source_order=0,
     nchannels=1,
+    prefix="",
 ):
     """Write {name}.h/.c (or .cpp) -- or {name}.f90 -- for `kernel`.
 
@@ -810,8 +819,16 @@ def generate_kernel_code(
     nchannels C > 1 stacks C independent source sets (S, M, L, F channel-major)
     that share one derivative tensor.
 
+    prefix: prepended to every emitted function and to the header macros (FMMGEN_<PREFIX>MINORDER ...),
+    so that operator sets for different kernels can be linked into one program. C and C++ only: Fortran
+    output is namespaced by its module, which is named after `name`.
+
     report: optional dict, filled with {(op, p): (opscount, seconds)}.
     """
+    if prefix and language == "fortran":
+        raise ValueError("prefix is not supported for fortran output (its module name is the namespace)")
+    if prefix and not prefix.replace("_", "a").isalnum():
+        raise ValueError("prefix must be a valid C identifier fragment")
     if language not in ("c", "c++", "fortran"):
         raise ValueError("language must be c, c++ or fortran")
     s, nch = source_order, nchannels
@@ -831,7 +848,7 @@ def generate_kernel_code(
     def emit(opname, lhs, exprs, inputs, operator="+=", internal=None, **kw):
         nonlocal header, body
         t0 = time.time()
-        head, code, ops = p.generate(opname, lhs, sp.Matrix(exprs), inputs, operator=operator,
+        head, code, ops = p.generate(prefix + opname, lhs, sp.Matrix(exprs), inputs, operator=operator,
                                      internal=internal or [], horner=False)
         if language != "fortran":
             code = _dedupe_R(code)
@@ -867,7 +884,8 @@ def generate_kernel_code(
     if "P2P" in operators:
         P2P = _ops_P2P(kernel, potential, field, s, nch)
         emit("P2P", "F", P2P, coords + [sp.MatrixSymbol("S", shell * nch, 1)])
-        head, code, _ = p.generate_batch("P2P_batch", "F", sp.Matrix(P2P), [str(v) for v in vars_], shell * nch)
+        head, code, _ = p.generate_batch(prefix + "P2P_batch", "F", sp.Matrix(P2P), [str(v) for v in vars_],
+                                         shell * nch)
         header += head
         body += _dedupe_R(code) + "\n" if language != "fortran" else code + "\n"
 
@@ -891,9 +909,10 @@ def generate_kernel_code(
         f.write("#pragma once\n")
         f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
         f.write(_RESTRICT_MACRO)
-        f.write(f"#define FMMGEN_MINORDER {start}\n#define FMMGEN_MAXORDER {order}\n")
-        f.write(f"#define FMMGEN_DIM {dim}\n#define FMMGEN_SOURCEORDER {s}\n#define FMMGEN_NCHANNELS {nch}\n")
-        f.write(f"#define FMMGEN_SOURCESIZE {shell * nch}\n#define FMMGEN_OUTPUTSIZE {osize}\n")
+        m = "FMMGEN_" + (prefix.upper().rstrip("_") + "_" if prefix else "")
+        f.write(f"#define {m}MINORDER {start}\n#define {m}MAXORDER {order}\n")
+        f.write(f"#define {m}DIM {dim}\n#define {m}SOURCEORDER {s}\n#define {m}NCHANNELS {nch}\n")
+        f.write(f"#define {m}SOURCESIZE {shell * nch}\n#define {m}OUTPUTSIZE {osize}\n")
         f.write(f"/* kernel: {kernel.name.replace('*/', '')} ; derivative method: {kernel.method} */\n")
         f.write(header)
     with open(path(src_dir, fext), "w") as f:
@@ -990,3 +1009,27 @@ def yukawa(k=1.0, dim=3, **kw):
     k = _as_number(k)
     pde = {**{tuple(2 if j == i else 0 for j in range(dim)): 1 for i in range(dim)}, tuple([0] * dim): -k**2}
     return Kernel.radial(sp.exp(-k * _r) / _r, _r, dim, pde=kw.pop("pde", pde), **kw)
+
+
+def _helmholtz_pde(k, dim):
+    return {**{tuple(2 if j == i else 0 for j in range(dim)): 1 for i in range(dim)}, tuple([0] * dim): k**2}
+
+
+def helmholtz_cos(k=1.0, dim=3, **kw):
+    """cos(k r) / r: the real part of exp(i k r) / r, with its Helmholtz pde.
+
+    Low-frequency Helmholtz only (k D up to about 4 across a box): the Cartesian
+    expansion loses accuracy as the box grows in wavelengths. For a complex source
+    q = a + i b, Re/Im of the potential are
+        Re = cos * a - sin * b,   Im = cos * b + sin * a
+    so generate each of `helmholtz_cos` and `helmholtz_sin` with nchannels=2
+    (channels a and b), which shares each derivative tensor between the channels.
+    """
+    k = _as_number(k)
+    return Kernel.radial(sp.cos(k * _r) / _r, _r, dim, pde=kw.pop("pde", _helmholtz_pde(k, dim)), **kw)
+
+
+def helmholtz_sin(k=1.0, dim=3, **kw):
+    """sin(k r) / r: the imaginary part of exp(i k r) / r (smooth at r = 0)."""
+    k = _as_number(k)
+    return Kernel.radial(sp.sin(k * _r) / _r, _r, dim, pde=kw.pop("pde", _helmholtz_pde(k, dim)), **kw)
