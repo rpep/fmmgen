@@ -52,9 +52,13 @@ def two_more_backends():
 def test_recommend_is_advice_per_order(two_more_backends):
     rec = fmmgen.recommend(Problem(power_law(1)), [4, 8])
     assert rec[4][0][0] == "cheap" and rec[8][0][0] == "dear"  # ranking changes with order
-    assert [n for n, _, _ in rec[4]][-1] == "cartesian"  # unknown cost goes last
+    names = [n for n, _, _ in rec[4]]
+    assert {"cartesian", "spherical"} == set(names[-2:]) and names[:2] == ["cheap", "dear"]  # unknown costs last
     dip = fmmgen.recommend(Problem(power_law(1), source_order=1), [4])
-    assert dip[4][-1][0] == "cheap" and dip[4][-1][2] == "charges only"
+    reasons = {n: why for n, _, why in dip[4]}
+    assert reasons["cheap"] == "charges only" and reasons["cartesian"] == "" and "charges only" in reasons["spherical"]
+    flags = [bool(why) for _, _, why in dip[4]]
+    assert flags == sorted(flags)  # supporting backends first, the ones that cannot do it after
 
 
 def test_per_order_mapping_and_unsupported_mix(two_more_backends, tmp_path):

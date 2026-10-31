@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 import json
 import os
 
-__all__ = ["Problem", "Layout", "Manifest", "Backend", "CartesianBackend", "register_backend", "backends",
-           "get_backend", "recommend", "generate"]
+__all__ = ["Problem", "Layout", "Manifest", "Backend", "CartesianBackend", "SphericalBackend", "register_backend",
+           "backends", "get_backend", "recommend", "generate"]
 
 
 @dataclass(frozen=True)
@@ -191,6 +191,68 @@ class CartesianBackend(Backend):
                         options={"engine": engine, "compress": compress, "planar": planar}, variants=layouts)
 
 
+class SphericalBackend(Backend):
+    """Spherical-harmonic operators for the Laplace kernel 1/r (see `fmmgen.sh`).
+
+    (p+1)^2 real coefficients per expansion instead of the Cartesian (p+1)(p+2)(p+3)/6, an O(p^4) M2L
+    or an O(p^3) rotation-based one (`m2l="rotation"`, or the cached `M2Lrot_setup_p`/`M2Lrot_apply_p`
+    pair), and accuracy that keeps improving to 1e-8 and beyond, which the Cartesian operators reach only
+    at orders that take hours to generate. At moderate accuracy (about 3e-4 and looser) the Laplace-tuned
+    Cartesian operators are faster, so which backend is better depends on the order: see `recommend`.
+
+    Options: `m2l` ("plain" or "rotation"), `trunc` ("box" or "total"), `unroll`, `max_unroll`; see
+    `fmmgen.sh.generate_sh_code`. Cartesian-only options (CSE, minpow, horner) are ignored.
+
+    `planar=True` also emits the planar variants (`S2Mxy_p` ...) for charges in the z = 0 plane: (p+1)(p+2)/2
+    coefficients per expansion, listed under `variants` in the manifest. There is no compressed variant, since
+    the expansion is already trace-free: asking for one is an error.
+    """
+
+    name = "spherical"
+    supports_prefix = True
+    dependencies = ("libm",)
+    _IGNORED = ("CSE", "minpow", "horner", "report")
+
+    def supports(self, problem):
+        if not _is_laplace(problem.kernel):
+            return False, "only the three-dimensional Laplace kernel 1/r"
+        if problem.source_order != 0 or problem.nchannels != 1:
+            return False, "charges only (source_order 0, one channel)"
+        if not (problem.potential and problem.field):
+            return False, "always computes the potential and the field"
+        return True, ""
+
+    def layout(self, problem, p, variant="full"):
+        if p < 1:
+            raise ValueError("order must be >= 1")
+        if variant == "planar":
+            return Layout((p + 1) * (p + 2) // 2, (p + 1) * (p + 2) // 2, 1, 4)
+        if variant != "full":
+            raise ValueError(f"the spherical backend has no {variant!r} variant")
+        return Layout((p + 1) ** 2, (p + 1) ** 2, 1, 4)
+
+    def generate(self, problem, order, name, orders=None, language="c", prefix="", compress=False, planar=False,
+                 **options):
+        from .sh import generate_sh_code, rot_size
+
+        ok, why = self.supports(problem)
+        if not ok:
+            raise ValueError(f"spherical backend: {why}")
+        if compress:
+            raise ValueError("the spherical backend has no compressed variant: its expansion is already trace-free")
+        orders = sorted(orders) if orders is not None else list(range(1, order + 1))
+        opts = {k: v for k, v in options.items() if k not in self._IGNORED}
+        report = generate_sh_code(max(orders) + 1, name, orders=orders, language=language, prefix=prefix,
+                                  planar=planar, **opts)
+        files = [os.path.basename(report["header"]), os.path.basename(report["source"])]
+        info = {"m2l": opts.get("m2l", "plain"), "trunc": opts.get("trunc", "box"), "unroll": report["unroll"],
+                "planar": planar, "rotation_table_size": {p: rot_size(p) for p in orders}}
+        variants = {"planar": {p: self.layout(problem, p, "planar").__dict__ for p in orders}} if planar else {}
+        return Manifest(self.name, problem.kernel.name, language, orders, 0, 1, list(self.tiers), files,
+                        report["functions"], {p: self.layout(problem, p).__dict__ for p in orders},
+                        list(self.dependencies), prefix=prefix, options=info, variants=variants)
+
+
 _REGISTRY = {}
 
 
@@ -211,6 +273,7 @@ def get_backend(name):
 
 
 register_backend(CartesianBackend())
+register_backend(SphericalBackend())
 
 
 def _resolve(problem, backend, orders):

@@ -307,6 +307,18 @@ for, and listed with their layouts under `variants` in the manifest:
 `FMMGEN_MAXORDER` is an exclusive bound in both generators, so a driver loops
 `order < FMMGEN_MAXORDER`.
 
+The spherical-harmonic backend (`backend="spherical"`, Laplace charges only) uses (p+1)^2 real coefficients
+per expansion, an O(p^4) M2L or an O(p^3) rotation-based one (`m2l="rotation"`, or the cached
+`M2Lrot_setup_p`/`M2Lrot_apply_p` pair for a uniform tree), and keeps improving at orders where the Cartesian
+operators are impractical to generate. In our single-thread micro-benchmarks (worst-case geometry, signed
+random charges, a shared machine, timings good to about 20%) the Laplace Cartesian operators were faster at
+moderate accuracy, about 3e-4 and looser, and the spherical ones were the only way to 1e-6 and 1e-8, so use
+`fmmgen.recommend` as a starting point, not as a verdict, and measure on your own tree. `planar=True` works
+here too: for charges in the z = 0 plane the coefficients with n + |m| odd vanish, so the planar expansions hold
+(p+1)(p+2)/2 entries, the O(p^4) operators do about a quarter of the work and the z field is exactly zero (the
+rotation-based M2L has no planar form, so `M2Lxy_p` is the plain sum). There is no compressed variant, since the
+expansion is already trace-free.
+
 `backend` may also be a mapping, `{4: "cartesian", "default": "other"}`, to use different backends at
 different orders. Backends coexist: in a mixed build each backend writes `<name>_<backend>.*` with its
 functions prefixed `<backend>_`, so everything links into one program. Backends are registered with
