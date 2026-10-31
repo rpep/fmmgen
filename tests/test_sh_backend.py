@@ -30,8 +30,8 @@ def test_only_the_laplace_charge_problem_is_supported(tmp_path):
     ):
         with pytest.raises(ValueError, match=msg):
             generate(args.pop("kernel"), 3, "s", **args, **kw)
-    with pytest.raises(ValueError, match="planar or compressed"):
-        generate(power_law(1), 3, "s", planar=True, **kw)
+    with pytest.raises(ValueError, match="compressed"):
+        generate(power_law(1), 3, "s", compress=True, **kw)
     with pytest.raises(ValueError, match="language"):
         generate(power_law(1), 3, "s", language="fortran", **{k: v for k, v in kw.items()})
     assert not list(tmp_path.glob("s.*"))  # nothing is written for a refused request
@@ -52,6 +52,22 @@ def test_manifest_lists_what_the_header_declares(tmp_path):
     assert man.options["m2l"] == "rotation" and man.options["rotation_table_size"][4] > 0
     assert man.files == ["s.h", "s.c"] and man.dependencies == ["libm"]
     assert "M2Lrot_4(x, y, z, M, L);" in (tmp_path / "s.c").read_text()  # M2L_4 calls the rotation M2L
+
+
+def test_planar_variant_through_the_backend(tmp_path):
+    man = generate(power_law(1), 6, "sp", backend="spherical", orders=[2, 6], planar=True, src_dir=str(tmp_path),
+                   include_dir=str(tmp_path))
+    header = (tmp_path / "sp.h").read_text()
+    declared = set(re.findall(r"void (\w+)\(", header))
+    assert set(man.functions) <= declared and {"S2Mxy_6", "M2Lxy", "P2P_batchxy"} <= set(man.functions)
+    # the manifest layouts are the sizes the header declares
+    for p in (2, 6):
+        lay = man.variants["planar"][p]
+        tables = [int(v) for v in re.search(r"PLANAR_MULTIPOLESIZE\[\] = \{([\d, ]+)\}", header).group(1).split(",")]
+        assert lay["multipole"] == lay["local"] == tables[p] == (p + 1) * (p + 2) // 2
+    assert man.options["planar"] is True and "planar" not in generate(
+        power_law(1), 3, "sq", backend="spherical", orders=[3], src_dir=str(tmp_path), include_dir=str(tmp_path)
+    ).variants
 
 
 def test_generator_orders_prefix_and_validation(tmp_path):
@@ -82,9 +98,12 @@ class _Shared:
 
 
 @pytest.mark.skipif(not HAVE_GCC, reason="gcc not available")
-def test_spherical_and_cartesian_run_in_one_library(tmp_path):
+@pytest.mark.parametrize("planar", [False, True], ids=["full", "planar"])
+def test_spherical_and_cartesian_run_in_one_library(tmp_path, planar):
     """Cartesian at low order and spherical harmonics at high order, one shared library, both accurate."""
-    kw = dict(src_dir=str(tmp_path), include_dir=str(tmp_path))
+    from fmmgen.kernel import planar_sizes
+
+    kw = dict(src_dir=str(tmp_path), include_dir=str(tmp_path), planar=planar)
     man = generate(power_law(1), 6, "mix", backend={"default": "cartesian", 6: "spherical"}, orders=[3, 6], **kw)
     assert man.by_order == {3: "cartesian", 6: "spherical"}
     cfiles = [str(tmp_path / f"mix_{b}.c") for b in ("cartesian", "spherical")]
@@ -92,19 +111,24 @@ def test_spherical_and_cartesian_run_in_one_library(tmp_path):
                     "-lm"], check=True, capture_output=True)
     lib = _Shared(tmp_path / "mix.so")
     rng = np.random.default_rng(1)
-    cs, ct = np.zeros(3), np.array([3.0, 1.0, -2.0])
+    cs, ct = np.zeros(3), np.array([3.0, 1.0, 0.0 if planar else -2.0])
     src, tgt, q = cluster(rng, cs, 20, 0.5, 3), cluster(rng, ct, 6, 0.5, 3), rng.standard_normal(20)
+    if planar:  # everything in the z = 0 plane
+        src[:, 2] = tgt[:, 2] = 0.0
     phi_ref, _ = direct(power_law(1), tgt, src, q)
+    sfx = "xy" if planar else ""
+    sizes = {"cartesian_": (3, planar_sizes(3, 3, 0, 1, True) if planar else (20, 20)),
+             "spherical_": (6, ((7 * 8 // 2,) * 2) if planar else (49, 49))}
     errs = {}
-    for prefix, p, size in (("cartesian_", 3, 20), ("spherical_", 6, 49)):
-        M, L = np.zeros(size), np.zeros(size)
+    for prefix, (p, (nm, nl)) in sizes.items():
+        M, L = np.zeros(nm), np.zeros(nl)
         for y_, qq in zip(src, q):
-            lib.call(f"{prefix}S2M_{p}", cs - y_, np.array([qq]), M)
-        lib.call(f"{prefix}M2L_{p}", ct - cs, M, L)
+            lib.call(f"{prefix}S2M{sfx}_{p}", cs - y_, np.array([qq]), M)
+        lib.call(f"{prefix}M2L{sfx}_{p}", ct - cs, M, L)
         phi = np.zeros(6)
         for i, t in enumerate(tgt):
             F = np.zeros(4)
-            lib.call(f"{prefix}L2P_{p}", t - ct, L, F)
+            lib.call(f"{prefix}L2P{sfx}_{p}", t - ct, L, F)
             phi[i] = F[0]
         errs[prefix] = np.linalg.norm(phi - phi_ref) / np.linalg.norm(phi_ref)
     assert errs["cartesian_"] < 5e-2 and errs["spherical_"] < 1e-3 and errs["spherical_"] < errs["cartesian_"]

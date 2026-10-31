@@ -201,8 +201,11 @@ class SphericalBackend(Backend):
     Cartesian operators are faster, so which backend is better depends on the order: see `recommend`.
 
     Options: `m2l` ("plain" or "rotation"), `trunc` ("box" or "total"), `unroll`, `max_unroll`; see
-    `fmmgen.sh.generate_sh_code`. Cartesian-only options (CSE, minpow, horner) are ignored. There are no
-    planar or compressed variants: asking for them is an error.
+    `fmmgen.sh.generate_sh_code`. Cartesian-only options (CSE, minpow, horner) are ignored.
+
+    `planar=True` also emits the planar variants (`S2Mxy_p` ...) for charges in the z = 0 plane: (p+1)(p+2)/2
+    coefficients per expansion, listed under `variants` in the manifest. There is no compressed variant, since
+    the expansion is already trace-free: asking for one is an error.
     """
 
     name = "spherical"
@@ -220,10 +223,12 @@ class SphericalBackend(Backend):
         return True, ""
 
     def layout(self, problem, p, variant="full"):
-        if variant != "full":
-            raise ValueError(f"the spherical backend has no {variant!r} variant")
         if p < 1:
             raise ValueError("order must be >= 1")
+        if variant == "planar":
+            return Layout((p + 1) * (p + 2) // 2, (p + 1) * (p + 2) // 2, 1, 4)
+        if variant != "full":
+            raise ValueError(f"the spherical backend has no {variant!r} variant")
         return Layout((p + 1) ** 2, (p + 1) ** 2, 1, 4)
 
     def generate(self, problem, order, name, orders=None, language="c", prefix="", compress=False, planar=False,
@@ -233,17 +238,19 @@ class SphericalBackend(Backend):
         ok, why = self.supports(problem)
         if not ok:
             raise ValueError(f"spherical backend: {why}")
-        if compress or planar:
-            raise ValueError("the spherical backend has no planar or compressed variants")
+        if compress:
+            raise ValueError("the spherical backend has no compressed variant: its expansion is already trace-free")
         orders = sorted(orders) if orders is not None else list(range(1, order + 1))
         opts = {k: v for k, v in options.items() if k not in self._IGNORED}
-        report = generate_sh_code(max(orders) + 1, name, orders=orders, language=language, prefix=prefix, **opts)
+        report = generate_sh_code(max(orders) + 1, name, orders=orders, language=language, prefix=prefix,
+                                  planar=planar, **opts)
         files = [os.path.basename(report["header"]), os.path.basename(report["source"])]
         info = {"m2l": opts.get("m2l", "plain"), "trunc": opts.get("trunc", "box"), "unroll": report["unroll"],
-                "rotation_table_size": {p: rot_size(p) for p in orders}}
+                "planar": planar, "rotation_table_size": {p: rot_size(p) for p in orders}}
+        variants = {"planar": {p: self.layout(problem, p, "planar").__dict__ for p in orders}} if planar else {}
         return Manifest(self.name, problem.kernel.name, language, orders, 0, 1, list(self.tiers), files,
                         report["functions"], {p: self.layout(problem, p).__dict__ for p in orders},
-                        list(self.dependencies), prefix=prefix, options=info)
+                        list(self.dependencies), prefix=prefix, options=info, variants=variants)
 
 
 _REGISTRY = {}

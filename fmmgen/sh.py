@@ -431,6 +431,172 @@ static void sh_m2l_rot_apply(int p, int total, const double *Dt, const double *M
 """
 
 
+_PLANAR_CODE = r"""
+/* ---- planar variants: sources, targets and centres in the z = 0 plane --------------------
+   The solid harmonics with n + |m| odd vanish at z = 0, and so do the multipole and local
+   coefficients built from them, so an expansion keeps only the n + |m| even entries,
+   n(n+1)/2 + (n+k)/2 for the signed index k (k > 0: real part of order k, k < 0: imaginary
+   part of order |k|): (p+1)(p+2)/2 of them. The z field is identically zero. */
+#define SHP_I(n, k) ((n) * ((n) + 1) / 2 + ((n) + (k)) / 2)
+#define SHP_RE(n, m) SHP_I(n, m)
+#define SHP_IM(n, m) SHP_I(n, -(m))
+/* first k >= lo with k = j (mod 2) */
+#define SHP_START(lo, j) ((lo) + ((((lo) - (j)) & 1) ? 1 : 0))
+
+static void shp_scatter(int p, const double *Ac, double *A) {
+    for (int i = 0; i < (p + 1) * (p + 1); i++) A[i] = 0.0;
+    for (int n = 0; n <= p; n++)
+        for (int k = -n; k <= n; k += 2) A[n * n + n + k] = Ac[SHP_I(n, k)];
+}
+
+static void shp_gather_add(int p, const double *A, double *Ac) {
+    for (int n = 0; n <= p; n++)
+        for (int k = -n; k <= n; k += 2) Ac[SHP_I(n, k)] += A[n * n + n + k];
+}
+
+static void sh_s2m_planar(int p, double x, double y, double q, double *Mc) {
+    double M[SH_NS] = {0};
+    sh_s2m(p, x, y, 0.0, q, M);
+    shp_gather_add(p, M, Mc);
+}
+
+static void sh_l2p_planar(int p, double x, double y, const double *Lc, double *F) {
+    double R[SH_NS], L[SH_NS];
+    sh_solid(p, 0, x, y, 0.0, R);
+    shp_scatter(p, Lc, L);
+    sh_eval(p, 1, L, R, F);
+}
+
+static void sh_m2p_planar(int p, double x, double y, const double *Mc, double *F) {
+    double I[(SH_PMAX + 2) * (SH_PMAX + 2)], M[SH_NS];
+    sh_solid(p + 1, 1, x, y, 0.0, I);
+    shp_scatter(p, Mc, M);
+    sh_eval(p, 0, M, I, F);
+}
+
+/* The O(p^4) operators: only the n + m even outputs, and the inner sum over k skips the entries that
+   are zero (k = j mod 2). */
+static void sh_m2m_planar(int p, double x, double y, const double *Mc, double *Msc) {
+    const int S = 2 * p + 1;
+    double R[SH_NS], M[SH_NS];
+    double Rr[(SH_PMAX + 1) * (2 * SH_PMAX + 1)], Ri[(SH_PMAX + 1) * (2 * SH_PMAX + 1)];
+    double Mr[(SH_PMAX + 1) * (2 * SH_PMAX + 1)], Mi[(SH_PMAX + 1) * (2 * SH_PMAX + 1)];
+    sh_solid(p, 0, x, y, 0.0, R);
+    shp_scatter(p, Mc, M);
+    sh_expand(p, S, p, R, Rr, Ri);
+    sh_expand(p, S, p, M, Mr, Mi);
+    for (int n = 0; n <= p; n++) {
+        for (int m = n & 1; m <= n; m += 2) {
+            double sr = 0.0, si = 0.0;
+            for (int j = 0; j <= n; j++) {
+                double sg = (j & 1) ? -1.0 : 1.0;
+                int lo = SH_MAX(-j, m - (n - j)), hi = SH_MIN(j, m + n - j);
+                const double *rr = Rr + j * S + p, *ri = Ri + j * S + p;
+                const double *mr = Mr + (n - j) * S + p + m, *mi = Mi + (n - j) * S + p + m;
+                double ar = 0.0, ai = 0.0;
+                for (int k = SHP_START(lo, j); k <= hi; k += 2) {
+                    ar += rr[k] * mr[-k] + ri[k] * mi[-k];
+                    ai += rr[k] * mi[-k] - ri[k] * mr[-k];
+                }
+                sr += sg * ar;
+                si += sg * ai;
+            }
+            Msc[SHP_RE(n, m)] += sr;
+            if (m > 0) Msc[SHP_IM(n, m)] += si;
+        }
+    }
+}
+
+static void sh_l2l_planar(int p, double x, double y, const double *Lc, double *Lsc) {
+    const int S = 2 * p + 1;
+    double R[SH_NS], L[SH_NS];
+    double Rr[(SH_PMAX + 1) * (2 * SH_PMAX + 1)], Ri[(SH_PMAX + 1) * (2 * SH_PMAX + 1)];
+    double Lr[(SH_PMAX + 1) * (2 * SH_PMAX + 1)], Li[(SH_PMAX + 1) * (2 * SH_PMAX + 1)];
+    sh_solid(p, 0, x, y, 0.0, R);
+    shp_scatter(p, Lc, L);
+    sh_expand(p, S, p, R, Rr, Ri);
+    sh_expand(p, S, p, L, Lr, Li);
+    for (int n = 0; n <= p; n++) {
+        for (int m = n & 1; m <= n; m += 2) {
+            double sr = 0.0, si = 0.0;
+            for (int j = n; j <= p; j++) {
+                int lo = SH_MAX(-j, m - (j - n)), hi = SH_MIN(j, m + j - n);
+                const double *lr = Lr + j * S + p, *li = Li + j * S + p;
+                const double *rr = Rr + (j - n) * S + p - m, *ri = Ri + (j - n) * S + p - m;
+                for (int k = SHP_START(lo, j); k <= hi; k += 2) {
+                    sr += lr[k] * rr[k] - li[k] * ri[k];
+                    si += lr[k] * ri[k] + li[k] * rr[k];
+                }
+            }
+            Lsc[SHP_RE(n, m)] += sr;
+            if (m > 0) Lsc[SHP_IM(n, m)] += si;
+        }
+    }
+}
+
+static void sh_m2l_plain_planar(int p, int total, double x, double y, const double *Mc, double *Lc) {
+    const int D = total ? p : 2 * p;
+    const int SI = 2 * D + 1, SM = 2 * p + 1;
+    double I[(2 * SH_PMAX + 1) * (2 * SH_PMAX + 1)], M[SH_NS];
+    double Ir[(2 * SH_PMAX + 1) * (4 * SH_PMAX + 1)], Ii[(2 * SH_PMAX + 1) * (4 * SH_PMAX + 1)];
+    double Mr[(SH_PMAX + 1) * (2 * SH_PMAX + 1)], Mi[(SH_PMAX + 1) * (2 * SH_PMAX + 1)];
+    sh_solid(D, 1, x, y, 0.0, I);
+    shp_scatter(p, Mc, M);
+    sh_expand(D, SI, D, I, Ir, Ii);
+    sh_expand(p, SM, p, M, Mr, Mi);
+    for (int n = 0; n <= p; n++) {
+        for (int m = n & 1; m <= n; m += 2) {
+            double sr = 0.0, si = 0.0;
+            int jmax = total ? p - n : p;
+            for (int j = 0; j <= jmax; j++) {
+                const double *mr = Mr + j * SM + p, *mi = Mi + j * SM + p;
+                const double *ir = Ir + (j + n) * SI + D - m, *ii = Ii + (j + n) * SI + D - m;
+                double ar = 0.0, ai = 0.0;
+                for (int k = -j; k <= j; k += 2) {
+                    ar += mr[k] * ir[k] - mi[k] * ii[k];
+                    ai += mr[k] * ii[k] + mi[k] * ir[k];
+                }
+                sr += ar;
+                si += ai;
+            }
+            Lc[SHP_RE(n, m)] += sr;
+            if (m > 0) Lc[SHP_IM(n, m)] += si;
+        }
+    }
+}
+"""
+
+_P2P_PLANAR = """double Rinv = 1.0 / sqrt(x*x + y*y);
+    double Ftmp0 = Rinv*Rinv*Rinv*S[0];
+    F[0] += Rinv*S[0];
+    F[1] += Ftmp0*x;
+    F[2] += Ftmp0*y;"""
+
+_P2P_BATCH_PLANAR = """void P2P_batchxy(double tx, double ty, double tz,
+    const double * FMMGEN_RESTRICT sx,
+    const double * FMMGEN_RESTRICT sy,
+    const double * FMMGEN_RESTRICT sz,
+    const double * FMMGEN_RESTRICT S,
+    size_t begin, size_t end, double * FMMGEN_RESTRICT F) {
+    double facc0 = 0.0, facc1 = 0.0, facc2 = 0.0;
+    (void)tz; (void)sz;
+#pragma omp simd reduction(+:facc0,facc1,facc2)
+    for (size_t u = begin; u < end; u++) {
+        double x = tx - sx[u];
+        double y = ty - sy[u];
+        double Rinv = 1.0 / sqrt(x*x + y*y);
+        double Ftmp0 = Rinv*Rinv*Rinv*S[u];
+        facc0 += Rinv*S[u];
+        facc1 += Ftmp0*x;
+        facc2 += Ftmp0*y;
+    }
+    F[0] += facc0;
+    F[1] += facc1;
+    F[2] += facc2;
+}
+"""
+
+
 def _split_code():
     code = _LOOP_CODE
     i1 = code.index("/* Solid harmonics")
@@ -612,14 +778,23 @@ _P2P_BATCH = """void P2P_batch(double tx, double ty, double tz,
 
 def generate_sh_code(order, name, unroll=False, m2l="plain", trunc="box", language="c",
                      include_dir=None, src_dir=None, pmin=1, max_unroll=DEFAULT_MAX_UNROLL, orders=None,
-                     prefix=""):
+                     prefix="", planar=False):
     """Write <name>.h and <name>.c (or .cpp) with the SH operators for p = pmin..order-1
     (the same convention as fmmgen.generate_code: FMMGEN_MAXORDER = order is exclusive).
 
     orders: an explicit list of degrees to emit instead of pmin..order-1 (they need not be contiguous;
     `order` must then exceed the largest). prefix: prepended to every function and to the header macros
     (FMMGEN_<PREFIX>MAXORDER ...), so the operators can be linked into one program with another
-    backend's. Returns a report dict (paths, orders, functions, generated size)."""
+    backend's.
+
+    planar: also emit S2Mxy_p, M2Mxy_p, M2Lxy_p, L2Lxy_p, L2Pxy_p, M2Pxy_p, P2Pxy and P2P_batchxy for charges
+    and targets confined to the z = 0 plane (every displacement then has z = 0, and z is ignored). An expansion
+    keeps only its n + |m| even entries, (p+1)(p+2)/2 of them (see `sh_math.planar_keep`), the O(p^4) operators
+    do about a quarter of the work, and the z field is exactly zero. They are loops whatever `unroll` is, and
+    M2Lxy_p is the plain double sum: the rotation-based M2L has no planar form, because rotating an in-plane
+    displacement onto the z axis destroys the parity structure.
+
+    Returns a report dict (paths, orders, functions, generated size)."""
     if language not in ("c", "c++"):
         raise ValueError("language must be 'c' or 'c++'")
     if m2l not in ("rotation", "plain"):
@@ -652,8 +827,10 @@ def generate_sh_code(order, name, unroll=False, m2l="plain", trunc="box", langua
     macros, body, rot_setup, rot_apply = _split_code()
     src = [f'#include "{name}.h"', "#include <math.h>", "#include <stddef.h>",
            f"#define SH_PMAX {pmax}", _tables(pmax, full=not unroll), macros]
-    if not unroll:
+    if not unroll or planar:
         src.append(body)
+    if planar:
+        src.append(_PLANAR_CODE)
     src.append(rot_setup)
     if not unroll:
         src.append(rot_apply)
@@ -668,12 +845,20 @@ def generate_sh_code(order, name, unroll=False, m2l="plain", trunc="box", langua
            f"static const size_t {m}MULTIPOLESIZE[] = {{{sizes_list}}};",
            f"static const size_t {m}LOCALSIZE[] = {{{sizes_list}}};",
            f"static const size_t {m}ROTSIZE[] = {{" + ", ".join(str(rot_size(p)) for p in range(order + 1)) + "};"]
+    if planar:
+        psizes = ", ".join(str(sm.planar_size(p)) for p in range(order + 1))
+        hdr += [f"#define {m}PLANAR 1",
+                "/* planar arrays: (p+1)(p+2)/2 reals, the n + |m| even entries; index by order p. */",
+                f"static const size_t {m}PLANAR_MULTIPOLESIZE[] = {{{psizes}}};",
+                f"static const size_t {m}PLANAR_LOCALSIZE[] = {{{psizes}}};"]
 
     names = [("S2M", "S", "M"), ("M2M", "M", "Ms"), ("M2L", "M", "L"), ("L2L", "L", "Ls"),
              ("L2P", "L", "F"), ("M2P", "M", "F")]
     extra = [("M2Lplain", "M", "L"), ("M2Lrot", "M", "L")]
+    pnames = [("S2Mxy", "S", "M"), ("M2Mxy", "M", "Ms"), ("M2Lxy", "M", "L"), ("L2Lxy", "L", "Ls"),
+              ("L2Pxy", "L", "F"), ("M2Pxy", "M", "F")] if planar else []
     for p in orders:
-        for nm, a, b in names + extra:
+        for nm, a, b in names + extra + pnames:
             hdr.append(_decl(f"{pf}{nm}_{p}", a, b))
         hdr.append(f"void {pf}M2Lrot_setup_{p}(double x, double y, double z, double * FMMGEN_RESTRICT Dt);")
         hdr.append(f"void {pf}M2Lrot_apply_{p}(const double * FMMGEN_RESTRICT Dt, "
@@ -682,7 +867,12 @@ def generate_sh_code(order, name, unroll=False, m2l="plain", trunc="box", langua
     hdr.append(f"void {pf}P2P_batch(double tx, double ty, double tz, const double * FMMGEN_RESTRICT sx, "
                "const double * FMMGEN_RESTRICT sy, const double * FMMGEN_RESTRICT sz, "
                "const double * FMMGEN_RESTRICT S, size_t begin, size_t end, double * FMMGEN_RESTRICT F);")
-    for nm, a, b in names + extra:
+    if planar:
+        hdr.append(_decl(f"{pf}P2Pxy", "S", "F"))
+        hdr.append(f"void {pf}P2P_batchxy(double tx, double ty, double tz, const double * FMMGEN_RESTRICT sx, "
+                   "const double * FMMGEN_RESTRICT sy, const double * FMMGEN_RESTRICT sz, "
+                   "const double * FMMGEN_RESTRICT S, size_t begin, size_t end, double * FMMGEN_RESTRICT F);")
+    for nm, a, b in names + extra + pnames:
         hdr.append(f"void {pf}{nm}(double x, double y, double z, double * FMMGEN_RESTRICT {a}, "
                    f"double * FMMGEN_RESTRICT {b}, int order);")
 
@@ -711,13 +901,24 @@ def generate_sh_code(order, name, unroll=False, m2l="plain", trunc="box", langua
                         f"{pf}M2Lrot_apply_{p}(Dt, M, L);"]))
         alias = "M2Lrot" if m2l == "rotation" else "M2Lplain"
         src.append(_fn(f"{pf}M2L_{p}", "M", "L", [f"{pf}{alias}_{p}(x, y, z, M, L);"]))
+        if planar:
+            for nm, a, b, call in (("S2Mxy", "S", "M", f"sh_s2m_planar({p}, x, y, S[0], M);"),
+                                   ("M2Mxy", "M", "Ms", f"sh_m2m_planar({p}, x, y, M, Ms);"),
+                                   ("M2Lxy", "M", "L", f"sh_m2l_plain_planar({p}, {total}, x, y, M, L);"),
+                                   ("L2Lxy", "L", "Ls", f"sh_l2l_planar({p}, x, y, L, Ls);"),
+                                   ("L2Pxy", "L", "F", f"sh_l2p_planar({p}, x, y, L, F);"),
+                                   ("M2Pxy", "M", "F", f"sh_m2p_planar({p}, x, y, M, F);")):
+                src.append(_fn(f"{pf}{nm}_{p}", a, b, ["(void)z;", call]))
 
     src.append(_fn(f"{pf}P2P", "S", "F", [
         "double Rinv = 1.0 / sqrt(x*x + y*y + z*z);",
         "double Ftmp0 = Rinv*Rinv*Rinv*S[0];",
         "F[0] += Rinv*S[0];", "F[1] += Ftmp0*x;", "F[2] += Ftmp0*y;", "F[3] += Ftmp0*z;"]))
     src.append(_P2P_BATCH.replace("void P2P_batch(", f"void {pf}P2P_batch(", 1))
-    for nm, a, b in names + extra:
+    if planar:
+        src.append(_fn(f"{pf}P2Pxy", "S", "F", ["(void)z;"] + _P2P_PLANAR.split("\n    ")))
+        src.append(_P2P_BATCH_PLANAR.replace("void P2P_batchxy(", f"void {pf}P2P_batchxy(", 1))
+    for nm, a, b in names + extra + pnames:
         cases = "".join(f"        case {p}:\n            {pf}{nm}_{p}(x, y, z, {a}, {b});\n            break;\n"
                         for p in orders)
         src.append(f"void {pf}{nm}(double x, double y, double z, double * FMMGEN_RESTRICT {a}, "
@@ -734,7 +935,12 @@ def generate_sh_code(order, name, unroll=False, m2l="plain", trunc="box", langua
         f.write(text)
     functions = [f"{pf}{nm}_{p}" for p in orders for nm in ("S2M", "M2M", "M2L", "L2L", "L2P", "M2P", "M2Lplain",
                                                               "M2Lrot", "M2Lrot_setup", "M2Lrot_apply")]
+    if planar:
+        functions += [f"{pf}{nm}_{p}" for p in orders for nm in ("S2Mxy", "M2Mxy", "M2Lxy", "L2Lxy", "L2Pxy", "M2Pxy")]
+        functions += [f"{pf}P2Pxy", f"{pf}P2P_batchxy"]
     functions += [f"{pf}{nm}" for nm in ("P2P", "P2P_batch", "S2M", "M2M", "M2L", "L2L", "L2P", "M2P", "M2Lplain",
                                          "M2Lrot")]
+    if planar:
+        functions += [f"{pf}{nm}xy" for nm in ("S2M", "M2M", "M2L", "L2L", "L2P", "M2P")]
     return {"header": hpath, "source": cpath, "orders": orders, "unroll": unroll, "functions": functions,
             "lines": text.count("\n"), "bytes": len(text)}

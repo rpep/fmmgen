@@ -64,6 +64,21 @@ def sizes(p):
     return (p + 1) ** 2, (p + 1) ** 2
 
 
+def planar_keep(p):
+    """Full-layout indices of the entries a planar expansion keeps, in planar order.
+
+    Sources, targets and centres in the z = 0 plane: the solid harmonics with n + |m| odd vanish there, and so do
+    the multipole and local coefficients built from them. A planar array holds the n + |m| even entries, n + 1 of
+    degree n, at n(n+1)/2 + (n+k)/2 for the signed index k (k > 0 the real part of order k, k < 0 the imaginary
+    part of order |k|)."""
+    return [n * n + n + k for n in range(p + 1) for k in range(-n, n + 1, 2)]
+
+
+def planar_size(p):
+    """Length of a planar expansion array of degree p: (p+1)(p+2)/2."""
+    return (p + 1) * (p + 2) // 2
+
+
 def ire(n, m):
     return n * n + n + m
 
