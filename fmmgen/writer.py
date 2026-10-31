@@ -833,14 +833,14 @@ def generate_code(
     kernel, fmmgen.kernel.Kernel:
         Generate operators for a general translation-invariant kernel instead
         of Laplace 1/r (monopole sources, any p, 1-3 dimensions; minpow 0 means automatic). Delegates to
-        fmmgen.kernel.generate_kernel_code with orders 1..order; the Laplace-only
+        fmmgen.kernel.generate_kernel_code with orders 1..order-1 (as without ``kernel``); the Laplace-only
         options (compress, planar, source_order, harmonic_derivs, cython,
         atomic, gpu) do not apply. With kernel=None nothing changes.
     """
     if kernel is not None:
         from fmmgen.kernel import generate_kernel_code
 
-        generate_kernel_code(kernel, order, name, language=language, CSE=CSE, potential=potential, field=field,
+        generate_kernel_code(kernel, order - 1, name, language=language, CSE=CSE, potential=potential, field=field,
                              minpow=minpow or None, include_dir=include_dir, src_dir=src_dir)
         return
     if save_opscounts:
