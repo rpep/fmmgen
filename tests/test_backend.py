@@ -1,5 +1,6 @@
 """The backend layer: registry, auto selection, layout and manifest."""
 import json
+import re
 
 import numpy as np
 import pytest
@@ -7,7 +8,7 @@ import pytest
 import fmmgen
 from fmmgen import Backend, Kernel, Problem, backends, generate, register_backend
 from fmmgen.backend import CartesianBackend
-from fmmgen.kernel import nterms, power_law, source_indices
+from fmmgen.kernel import _planar_keep, nterms, power_law, source_indices, yukawa
 from fmmgen.vector import stokeslet
 from kernel_util import HAVE_GCC, Lib
 
@@ -118,7 +119,7 @@ def test_prefix_applies_to_macros_and_functions(tmp_path):
     generate(power_law(1), 2, "pre", backend="cartesian", orders=[1, 2], prefix="lap_", src_dir=str(tmp_path),
              include_dir=str(tmp_path))
     h = (tmp_path / "pre.h").read_text()
-    assert "lap_M2L_2" in h and "lap_P2P_batch" in h and "FMMGEN_LAP_MAXORDER 2" in h
+    assert "lap_M2L_2" in h and "lap_P2P_batch" in h and "FMMGEN_LAP_MAXORDER 3" in h
     assert "void M2L_2" not in h
     with pytest.raises(ValueError):
         generate(power_law(1), 2, "bad", prefix="x-y", orders=[1, 2], src_dir=str(tmp_path), include_dir=str(tmp_path))
@@ -201,3 +202,103 @@ def test_unservable_requests_are_errors(two_more_backends, tmp_path):
     with pytest.raises(ValueError, match="mixed-backend"):
         generate(power_law(1), 4, "b", backend={"default": "cartesian", 4: "dear"}, orders=[2, 4], prefix="x_", **kw)
     assert not list(tmp_path.glob("a*")) and not list(tmp_path.glob("b*"))  # nothing is written on error
+
+
+def _table(header, name):
+    return [int(v) for v in re.search(rf"{name}\[\] = \{{([\d, ]+)\}}", header).group(1).split(",")]
+
+
+@pytest.mark.parametrize("kernel,engine", [(power_law(1), "laplace"), (yukawa(1.0), "generic")],
+                         ids=["laplace", "generic"])
+def test_cartesian_variants_are_listed_and_match_the_generated_tables(tmp_path, kernel, engine):
+    man = generate(kernel, 4, "k", orders=[2, 4], planar=True, compress=engine == "laplace",
+                   src_dir=str(tmp_path), include_dir=str(tmp_path))
+    assert man.options["engine"] == engine
+    header = (tmp_path / "k.h").read_text()
+    # the layouts in the manifest are the sizes the generated code declares, for every variant
+    for variant, tables in (("planar", ("FMMGEN_PLANAR_MULTIPOLESIZE", "FMMGEN_PLANAR_LOCALSIZE")),
+                            ("compressed", ("FMMGEN_MULTIPOLESIZE", "FMMGEN_LOCALSIZE"))):
+        if variant not in man.variants:
+            continue
+        for p in (2, 4):
+            lay = man.variants[variant][p]
+            assert (_table(header, tables[0])[p], _table(header, tables[1])[p]) == (lay["multipole"], lay["local"])
+    assert "S2Mxy_4" in man.functions and ("S2Mc_4" in man.functions) == (engine == "laplace")
+    assert {"planar"} <= set(man.variants) and ("compressed" in man.variants) == (engine == "laplace")
+
+
+def test_variants_that_do_not_apply_are_rejected(tmp_path):
+    kw = dict(orders=[2], src_dir=str(tmp_path), include_dir=str(tmp_path))
+    with pytest.raises(ValueError, match="compressed"):
+        generate(yukawa(1.0), 2, "a", compress=True, **kw)  # trace-free storage needs a harmonic kernel
+    with pytest.raises(ValueError, match="three-dimensional"):
+        generate(power_law(1, dim=2), 2, "b", planar=True, **kw)
+    assert not list(tmp_path.glob("[ab].*"))
+
+
+@pytest.mark.skipif(not HAVE_GCC, reason="gcc not available")
+def test_laplace_generators_are_interchangeable(tmp_path):
+    """The backend sends 1/r to the harmonic-aware generator; its operators must equal the generic ones."""
+    import ctypes
+    import subprocess
+
+    from fmmgen.kernel import generate_kernel_code, nterms
+
+    generate(power_law(1), 3, "fast", orders=[3], planar=True, src_dir=str(tmp_path), include_dir=str(tmp_path))
+    generate_kernel_code(power_law(1), 3, "slow", orders=[3], planar=True, src_dir=str(tmp_path),
+                         include_dir=str(tmp_path))
+    libs = []
+    for n in ("fast", "slow"):
+        subprocess.run(["gcc", "-O1", "-shared", "-fPIC", "-o", str(tmp_path / f"{n}.so"), str(tmp_path / f"{n}.c"),
+                        "-lm"], check=True)
+        libs.append(ctypes.CDLL(str(tmp_path / f"{n}.so")))
+    dp = ctypes.POINTER(ctypes.c_double)
+
+    def call(lib, fn, xyz, *arrays):
+        f = getattr(lib, fn)
+        f.argtypes = [ctypes.c_double] * 3 + [dp] * len(arrays)
+        f.restype = None
+        f(*xyz, *[a.ctypes.data_as(dp) for a in arrays])
+
+    rng = np.random.default_rng(4)
+    n = nterms(3, 3)
+    for fn, xyz, n_in, n_out in (("S2M_3", (0.3, -0.2, 0.4), 1, n), ("M2L_3", (2.0, -1.5, 1.0), n, n),
+                                 ("L2P_3", (0.2, -0.1, 0.3), n, 4), ("P2P", (1.1, 0.7, -0.9), 1, 4),
+                                 ("S2Mxy_3", (0.3, -0.2, 0.0), 1, None), ("P2Pxy", (1.1, 0.7, 0.0), 1, 4)):
+        if n_out is None:
+            n_out = len(_planar_keep(3, 3, 0, 1, True)[0])
+        arg = rng.standard_normal(n_in)
+        out = []
+        for lib in libs:
+            res = np.zeros(n_out)
+            call(lib, fn, xyz, arg, res)
+            out.append(res)
+        assert np.allclose(*out, rtol=1e-10, atol=1e-10 * np.max(np.abs(out[1]))), fn
+    # planar operators: same check on the planar arrays
+    km, kl = _planar_keep(3, 3, 0, 1, True)
+    for fn, xyz, n_in, n_out in (("M2Lxy_3", (2.0, -1.5, 0.0), len(km), len(kl)),
+                                 ("L2Pxy_3", (0.2, -0.1, 0.0), len(kl), 4), ("M2Pxy_3", (2.0, -1.5, 0.0), len(km), 4)):
+        arg = rng.standard_normal(n_in)
+        out = []
+        for lib in libs:
+            res = np.zeros(n_out)
+            call(lib, fn, xyz, arg, res)
+            out.append(res)
+        assert np.allclose(*out, rtol=1e-10, atol=1e-10 * np.max(np.abs(out[1]))), fn
+
+
+@pytest.mark.skipif(not HAVE_GCC, reason="gcc not available")
+def test_planar_reaches_vector_and_separable_kernels(tmp_path):
+    import subprocess
+
+    from fmmgen.separable import SeparableKernel
+
+    man = generate(stokeslet(), 3, "st", orders=[3], planar=True, src_dir=str(tmp_path), include_dir=str(tmp_path))
+    assert "st_g0_M2Lxy_3" in man.groups[0]["functions"] and "planar" in man.groups[0]["variants"]
+    SeparableKernel.lennard_jones("geometric").generate("lj", 2, orders=[2], planar=True, src_dir=str(tmp_path),
+                                                        include_dir=str(tmp_path))
+    for stem in ("st", "lj"):
+        cfiles = sorted(str(p) for p in tmp_path.glob(f"{stem}_g*.c"))
+        assert cfiles and all("xy_" in open(f).read() for f in cfiles)
+        subprocess.run(["gcc", "-O0", "-shared", "-fPIC", "-I", str(tmp_path), *cfiles, "-o",
+                        str(tmp_path / f"{stem}.so"), "-lm"], check=True, capture_output=True)
