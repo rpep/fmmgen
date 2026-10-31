@@ -74,6 +74,15 @@ uv run pytest tests
 uv run ruff check fmmgen tests
 ```
 
+Install the git hooks once to run the same lint on every commit and again before every push,
+so a push with failing lint is refused locally:
+
+```bash
+uv run pre-commit install
+```
+
+(`git push --no-verify` skips the hook; the `lint` job in CI is the check that cannot be skipped.)
+
 ## Example
 
 Generating operators is a single function call. Here's the minimum needed to get
