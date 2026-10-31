@@ -31,11 +31,35 @@ def _functions(text):
     return {re.match(r"void (\w+)\(", p).group(1): p.strip() for p in parts if p.startswith("void ")}
 
 
-def test_jobs_output_identical(tmp_path):
-    a = _emit(tmp_path, "serial")
-    b = _emit(tmp_path, "parallel", jobs=2)
+def test_jobs_output_identical(tmp_path, monkeypatch):
+    # cache_dir=None: with the default cache the second run would be a cache hit and never reach the pool
+    import multiprocessing as mp
+
+    pools = []
+    real = mp.get_context
+
+    def spy(*args, **kw):
+        pools.append(1)
+        return real(*args, **kw)
+
+    monkeypatch.setattr(mp, "get_context", spy)
+    a = _emit(tmp_path, "serial", cache_dir=None)
+    assert not pools
+    b = _emit(tmp_path, "parallel", jobs=2, cache_dir=None)
+    assert pools, "jobs=2 did not use a worker pool"
     assert (a / "ops.h").read_text() == (b / "ops.h").read_text()
     assert (a / "ops.cpp").read_text() == (b / "ops.cpp").read_text()
+
+
+def test_jobs_is_ignored_for_fortran(tmp_path, caplog):
+    kw = dict(CSE=True, minpow=11, language="fortran", cache_dir=None)
+    for sub in ("ser", "par"):
+        (tmp_path / sub).mkdir()
+    fmmgen.generate_code(3, "ops", src_dir=str(tmp_path / "ser"), **kw)
+    with caplog.at_level("WARNING"):
+        fmmgen.generate_code(3, "ops", src_dir=str(tmp_path / "par"), jobs=2, **kw)
+    assert "jobs is ignored" in caplog.text
+    assert (tmp_path / "ser" / "ops.f90").read_text() == (tmp_path / "par" / "ops.f90").read_text()
 
 
 def test_split_has_same_functions(tmp_path):
