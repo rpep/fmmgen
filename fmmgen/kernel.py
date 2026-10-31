@@ -797,6 +797,9 @@ def generate_kernel_code(
         P2P(x,y,z, S, F)           P2P_batch(tx,ty,tz, sx,sy,sz, S, begin, end, F)
     F holds [phi, -dphi/dx_i...] (potential and/or field).
 
+    `order` is the highest order emitted. FMMGEN_MAXORDER in the header is one more, an exclusive bound as in
+    `generate_code`, so a driver loops `for (order = FMMGEN_MINORDER; order < FMMGEN_MAXORDER; ...)`.
+
     minpow: integer powers up to this are written as products instead of pow()
     calls, which is much faster for the steep kernels (r^-6, r^-12). None (default)
     uses 64, enough for every library kernel at the orders that are practical to
@@ -891,7 +894,7 @@ def generate_kernel_code(
         f.write("#pragma once\n")
         f.write("#include <cstddef>\n" if language == "c++" else "#include <stddef.h>\n")
         f.write(_RESTRICT_MACRO)
-        f.write(f"#define FMMGEN_MINORDER {start}\n#define FMMGEN_MAXORDER {order}\n")
+        f.write(f"#define FMMGEN_MINORDER {start}\n#define FMMGEN_MAXORDER {order + 1}\n")
         f.write(f"#define FMMGEN_DIM {dim}\n#define FMMGEN_SOURCEORDER {s}\n#define FMMGEN_NCHANNELS {nch}\n")
         f.write(f"#define FMMGEN_SOURCESIZE {shell * nch}\n#define FMMGEN_OUTPUTSIZE {osize}\n")
         f.write(f"/* kernel: {kernel.name.replace('*/', '')} ; derivative method: {kernel.method} */\n")
@@ -908,7 +911,7 @@ def _write_fortran_kernel(p, body, name, orders, kernel, osize, out_dir):
     out = [f"module {name}", "  implicit none", "  private", "  integer, parameter, public :: wp = kind(1.0d0)"]
     out += [
         f"  integer, parameter, public :: FMMGEN_MINORDER = {start}",
-        f"  integer, parameter, public :: FMMGEN_MAXORDER = {order}",
+        f"  integer, parameter, public :: FMMGEN_MAXORDER = {order + 1}",
         f"  integer, parameter, public :: FMMGEN_DIM = {kernel.dim}",
         "  integer, parameter, public :: FMMGEN_SOURCESIZE = 1",
         f"  integer, parameter, public :: FMMGEN_OUTPUTSIZE = {osize}",
