@@ -190,3 +190,14 @@ def test_generate_vector_kernel_fortran(tmp_path):
     # a Fortran group is its own module, so no function prefix is needed (or allowed)
     man = generate(stokeslet(), 2, "st", orders=[2], language="fortran", src_dir=str(tmp_path))
     assert man.groups[0]["files"] == ["st_g0.f90"] and (tmp_path / "st_g0.f90").exists()
+
+
+def test_unservable_requests_are_errors(two_more_backends, tmp_path):
+    kw = dict(src_dir=str(tmp_path), include_dir=str(tmp_path))
+    with pytest.raises(ValueError, match="source_order"):
+        CartesianBackend().layout(Problem(power_law(1), source_order=2), 1)
+    with pytest.raises(ValueError, match="no backend for order 3"):
+        generate(power_law(1), 4, "a", backend={4: "cartesian"}, orders=[3, 4], **kw)  # no default given
+    with pytest.raises(ValueError, match="mixed-backend"):
+        generate(power_law(1), 4, "b", backend={"default": "cartesian", 4: "dear"}, orders=[2, 4], prefix="x_", **kw)
+    assert not list(tmp_path.glob("a*")) and not list(tmp_path.glob("b*"))  # nothing is written on error
