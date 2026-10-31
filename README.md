@@ -275,6 +275,30 @@ Buckingham, `erfc(a r)/r`, `erf(a r)/r`, Yukawa and softened gravity.
 
 Kernel parameters are baked in at generation time.
 
+### Backends and the manifest
+
+`fmmgen.generate(kernel, order, name, backend="cartesian", language="c")` is the front door for
+any kernel, scalar or tensor-valued. A *backend* decides how the kernel becomes operators; the
+Cartesian Taylor backend is the one that ships. `generate` writes `<name>.json` next to the
+sources, a manifest listing the files, the functions, the array sizes per order, the channels and
+the dependencies, so a driver can check what was generated:
+
+```python
+import fmmgen
+from fmmgen.kernel import yukawa
+
+man = fmmgen.generate(yukawa(1.0), 8, "yukawa", orders=[2, 4, 6, 8], language="c++")
+man.layouts[4]            # {'multipole': 35, 'local': 35, 'source': 1, 'output': 4}
+fmmgen.recommend(fmmgen.Problem(yukawa(1.0)), [4, 8])   # advice per order, never a silent choice
+```
+
+`backend` may also be a mapping, `{4: "cartesian", "default": "other"}`, to use different backends at
+different orders. Backends coexist: in a mixed build each backend writes `<name>_<backend>.*` with its
+functions prefixed `<backend>_`, so everything links into one program. Backends are registered with
+`register_backend`. `examples/kernels` generates a non-Laplace kernel in C++ and Fortran 90 and
+checks it against direct summation, and `docs/design/backends-and-passes.md` is the draft design for
+tree-level passes and FFT-based backends.
+
 ### Per-particle parameters and mixing rules
 
 Per-particle parameters with a separable mixing rule (Lennard-Jones with geometric or
